@@ -14,7 +14,7 @@ jobs:
       # ============================================================
       - name: Install dependencies
         run: |
-          set -e
+          set -eux
 
           sudo apt-get update
 
@@ -44,11 +44,57 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 3. GCC 4.9
+      # 3. Verify exact RMX1827 source files
+      # ============================================================
+      - name: Verify RMX1827 source
+        working-directory: kernel
+        run: |
+          set -eux
+
+          echo "=========================================="
+          echo "RMX1827 SOURCE CHECK"
+          echo "=========================================="
+
+          echo "PWD:"
+          pwd
+
+          echo
+          echo "Git commit:"
+          git rev-parse HEAD
+
+          echo
+          echo "Makefile:"
+          head -n 10 Makefile
+
+          echo
+          echo "Checking defconfig..."
+          test -f arch/arm64/configs/oppo6771_defconfig
+
+          echo
+          echo "Checking DTS..."
+          test -f arch/arm64/boot/dts/mediatek/oppo6771_18601.dts
+
+          echo
+          echo "Checking DWS..."
+          test -f drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+
+          echo
+          echo "DWS information:"
+          ls -lah \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+
+          wc -c \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+
+          echo
+          echo "SOURCE CHECK OK"
+
+      # ============================================================
+      # 4. AArch64 GCC 4.9
       # ============================================================
       - name: Setup AArch64 GCC 4.9
         run: |
-          set -e
+          set -eux
 
           git clone --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
@@ -56,59 +102,23 @@ jobs:
 
           echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
-      - name: Check GCC
+      # ============================================================
+      # 5. Verify compiler
+      # ============================================================
+      - name: Check compiler
         run: |
-          set -e
-
-          echo "===== GCC ====="
+          set -eux
 
           which aarch64-linux-android-gcc
 
           aarch64-linux-android-gcc --version
 
       # ============================================================
-      # 4. Verify exact source files
+      # 6. Check Docker + Python 2
       # ============================================================
-      - name: Verify source
-        working-directory: kernel
+      - name: Setup Python 2 environment
         run: |
-          set -e
-
-          echo "===== SOURCE ====="
-          pwd
-
-          echo
-          echo "===== VERSION ====="
-          head -n 6 Makefile
-
-          echo
-          echo "===== DEFCONFIG ====="
-          test -f arch/arm64/configs/oppo6771_defconfig
-          echo "OK: oppo6771_defconfig"
-
-          echo
-          echo "===== DTS ====="
-          test -f \
-            arch/arm64/boot/dts/mediatek/oppo6771_18601.dts
-          echo "OK: oppo6771_18601.dts"
-
-          echo
-          echo "===== DWS ====="
-          test -f \
-            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
-          echo "OK: oppo6771_18601.dws"
-
-          echo
-          echo "===== DWS SIZE ====="
-          wc -c \
-            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
-
-      # ============================================================
-      # 5. Python 2 DrvGen
-      # ============================================================
-      - name: Setup Python 2
-        run: |
-          set -e
+          set -eux
 
           docker --version
 
@@ -118,32 +128,13 @@ jobs:
             python:2.7 \
             python2 --version
 
-          cat > /tmp/python2-drvgen <<'EOF'
-          #!/bin/bash
-          set -e
-
-          HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
-
-          docker run --rm \
-            -v "$HOST_KERNEL:$HOST_KERNEL" \
-            -w "$HOST_KERNEL" \
-            python:2.7 \
-            python2 "$@"
-          EOF
-
-          chmod +x /tmp/python2-drvgen
-
-          sudo cp \
-            /tmp/python2-drvgen \
-            /usr/local/bin/python2-drvgen
-
       # ============================================================
-      # 6. Fix DRVGEN_OUT inheritance
+      # 7. Fix drvgen.mk output path
       # ============================================================
-      - name: Fix DrvGen output path
+      - name: Fix Driver Generator output path
         working-directory: kernel
         run: |
-          set -e
+          set -eux
 
           python3 - <<'PY'
           from pathlib import Path
@@ -161,61 +152,164 @@ jobs:
 
           if old not in s:
               raise SystemExit(
-                  "ERROR: expected DRVGEN_OUT block was not found"
+                  "ERROR: DRVGEN_OUT block not found. "
+                  "Repository version is unexpected."
               )
 
-          p.write_text(s.replace(old, new))
+          s = s.replace(old, new)
 
-          print("DRVGEN_OUT fix applied")
+          p.write_text(s)
+
+          print("DRVGEN_OUT FIXED")
           PY
 
           echo
-          echo "===== DRVGEN_OUT ====="
-
-          grep -n -A3 -B2 \
-            "DRVGEN_OUT" \
-            scripts/drvgen/drvgen.mk
+          echo "DRVGEN_OUT lines:"
+          grep -n -A4 -B2 "DRVGEN_OUT" scripts/drvgen/drvgen.mk
 
       # ============================================================
-      # 7. Restore original DrvGen and create launcher
+      # 8. Enable DWS dependency explicitly
       # ============================================================
-      - name: Setup DrvGen launcher
+      - name: Enable DWS dependency
         working-directory: kernel
         run: |
-          set -e
+          set -eux
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/drvgen/drvgen.mk")
+          s = p.read_text()
+
+          old = "#DWS_FILE := $(srctree)/$(DRVGEN_PATH)/$(MTK_PROJECT).dws"
+          new = "DWS_FILE := $(srctree)/$(DRVGEN_PATH)/$(MTK_PROJECT).dws"
+
+          if old in s:
+              s = s.replace(old, new)
+              p.write_text(s)
+              print("DWS_FILE dependency enabled")
+          elif new in s:
+              print("DWS_FILE already enabled")
+          else:
+              raise SystemExit(
+                  "ERROR: Could not find DWS_FILE definition"
+              )
+          PY
+
+          grep -n "DWS_FILE" scripts/drvgen/drvgen.mk
+
+      # ============================================================
+      # 9. Create ROBUST Python 2 DrvGen launcher
+      #
+      # IMPORTANT:
+      # Host path:
+      # /home/runner/work/.../kernel/...
+      #
+      # Docker path:
+      # /workspace/kernel/...
+      #
+      # Every argument is translated automatically.
+      # ============================================================
+      - name: Install Python 2 DrvGen launcher
+        working-directory: kernel
+        run: |
+          set -eux
 
           test -f tools/dct/DrvGen.py
 
-          mv \
-            tools/dct/DrvGen.py \
-            tools/dct/DrvGen.py.real
+          mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
 
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/bash
 
-          exec /usr/local/bin/python2-drvgen \
-            tools/dct/DrvGen.py.real "$@"
+          set -eu
+
+          HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
+          DOCKER_KERNEL="/workspace/kernel"
+
+          translated_args=()
+
+          for arg in "$@"; do
+              case "$arg" in
+                  "$HOST_KERNEL"/*)
+                      translated_args+=(
+                        "$DOCKER_KERNEL${arg#$HOST_KERNEL}"
+                      )
+                      ;;
+                  *)
+                      translated_args+=("$arg")
+                      ;;
+              esac
+          done
+
+          exec docker run --rm \
+              -v "$HOST_KERNEL:$DOCKER_KERNEL" \
+              -w "$DOCKER_KERNEL" \
+              python:2.7 \
+              python2 \
+              /workspace/kernel/tools/dct/DrvGen.py.real \
+              "${translated_args[@]}"
           EOF
 
           chmod +x tools/dct/DrvGen.py
 
-          echo "DrvGen launcher ready"
+          echo
+          echo "DrvGen launcher:"
+          cat tools/dct/DrvGen.py
 
       # ============================================================
-      # 8. Configure
+      # 10. DIRECT Docker visibility test
+      #
+      # This tests the EXACT DWS file using Python 2 INSIDE Docker.
+      # If this passes, the old Error 255 path problem is eliminated.
+      # ============================================================
+      - name: Verify DWS inside Python 2 Docker
+        working-directory: kernel
+        run: |
+          set -eux
+
+          HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
+
+          echo "Host kernel:"
+          echo "$HOST_KERNEL"
+
+          echo
+          echo "Host DWS:"
+          ls -lah \
+            "$HOST_KERNEL/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws"
+
+          echo
+          echo "Checking DWS inside Docker..."
+
+          docker run --rm \
+            -v "$HOST_KERNEL:/workspace/kernel" \
+            -w /workspace/kernel \
+            python:2.7 \
+            python2 -c "
+          import os
+          p='/workspace/kernel/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws'
+          print('DWS:', p)
+          print('exists:', os.path.exists(p))
+          print('isfile:', os.path.isfile(p))
+          assert os.path.isfile(p)
+          "
+
+          echo
+          echo "DOCKER DWS CHECK OK"
+
+      # ============================================================
+      # 11. Configure kernel
       # ============================================================
       - name: Configure kernel
         working-directory: kernel
         run: |
-          set -e
+          set -eux
 
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
-          echo "======================================"
-          echo "        KERNEL CONFIGURATION"
-          echo "======================================"
+          rm -rf out
 
           make \
             O=out \
@@ -228,13 +322,19 @@ jobs:
           echo
           echo "CONFIGURATION OK"
 
+          echo
+          echo "Important config:"
+          grep -E \
+            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_BUILD_ARM64' \
+            out/.config || true
+
       # ============================================================
-      # 9. Check output path BEFORE full build
+      # 12. Check Kbuild variables
       # ============================================================
-      - name: Check Kbuild paths
+      - name: Verify Kbuild Driver Generator paths
         working-directory: kernel
         run: |
-          set -e
+          set -eux
 
           export ARCH=arm64
           export SUBARCH=arm64
@@ -242,36 +342,91 @@ jobs:
 
           mkdir -p out/arch/arm64/boot/dts
 
-          echo "===== EXPECTED OUTPUT DIRECTORY ====="
-
-          test -d \
-            out/arch/arm64/boot/dts
-
-          echo "OK: out/arch/arm64/boot/dts"
+          echo
+          echo "Source tree:"
+          pwd
 
           echo
-          echo "===== DWS ====="
+          echo "Expected DWS:"
+          realpath \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
 
+          echo
+          echo "Expected output:"
+          realpath \
+            out/arch/arm64/boot/dts
+
+          echo
+          echo "DWS test:"
           test -f \
             drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
 
-          echo "OK: DWS exists"
+          echo
+          echo "OUTPUT DIRECTORY test:"
+          test -d \
+            out/arch/arm64/boot/dts
+
+          echo
+          echo "KBUILD PATH CHECK OK"
 
       # ============================================================
-      # 10. Build
+      # 13. Run Driver Generator separately BEFORE full kernel build
+      #
+      # This forces the exact problematic operation first.
       # ============================================================
-      - name: Build kernel
+      - name: Test MediaTek Driver Generator
         working-directory: kernel
         run: |
-          set -e
+          set -eux
 
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
-          echo "======================================"
-          echo "       REALME 3i KERNEL BUILD"
-          echo "======================================"
+          mkdir -p \
+            out/arch/arm64/boot/dts/oppo6771_18601
+
+          echo
+          echo "=========================================="
+          echo "TESTING DRVGEN"
+          echo "=========================================="
+
+          tools/dct/DrvGen.py \
+            "$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws" \
+            "$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601" \
+            "$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601" \
+            cust_dtsi
+
+          echo
+          echo "DRVGEN TEST FINISHED"
+
+          echo
+          echo "Generated files:"
+          find \
+            out/arch/arm64/boot/dts/oppo6771_18601 \
+            -maxdepth 2 \
+            -type f \
+            -print
+
+          test -f \
+            out/arch/arm64/boot/dts/oppo6771_18601/cust_dtsi
+
+      # ============================================================
+      # 14. FULL KERNEL BUILD
+      # ============================================================
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          set -eux
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+
+          echo
+          echo "=========================================="
+          echo "REALME 3i RMX1827 KERNEL BUILD"
+          echo "=========================================="
 
           make \
             -j"$(nproc)" \
@@ -282,67 +437,65 @@ jobs:
             V=1
 
           echo
-          echo "======================================"
-          echo "       BUILD FINISHED"
-          echo "======================================"
+          echo "=========================================="
+          echo "BUILD FINISHED"
+          echo "=========================================="
 
       # ============================================================
-      # 11. Show output
+      # 15. Verify final kernel
       # ============================================================
-      - name: Show kernel output
+      - name: Verify kernel output
         working-directory: kernel
         run: |
-          set -e
+          set -eux
 
-          echo "======================================"
-          echo "          KERNEL OUTPUT"
-          echo "======================================"
+          echo
+          echo "Kernel output directory:"
+          ls -lah out/arch/arm64/boot/
 
+          echo
+          echo "All output files:"
           find \
             out/arch/arm64/boot \
             -type f \
             -print
 
+          test -f out/arch/arm64/boot/Image
+
+          echo
+          echo "FINAL KERNEL IMAGE EXISTS"
+
       # ============================================================
-      # 12. Prepare artifacts
+      # 16. Prepare artifact
       # ============================================================
       - name: Prepare kernel artifact
         run: |
-          set -e
+          set -eux
 
+          rm -rf kernel-output
           mkdir -p kernel-output
 
-          # Image
-          if [ -f kernel/out/arch/arm64/boot/Image ]; then
-            cp \
-              kernel/out/arch/arm64/boot/Image \
-              kernel-output/
+          BOOT="kernel/out/arch/arm64/boot"
+
+          # Main kernel
+          if [ -f "$BOOT/Image" ]; then
+              cp "$BOOT/Image" kernel-output/
           fi
 
-          # Image.gz
-          if [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
-            cp \
-              kernel/out/arch/arm64/boot/Image.gz \
-              kernel-output/
+          if [ -f "$BOOT/Image.gz" ]; then
+              cp "$BOOT/Image.gz" kernel-output/
           fi
 
-          # Image-dtb
-          if [ -f kernel/out/arch/arm64/boot/Image-dtb ]; then
-            cp \
-              kernel/out/arch/arm64/boot/Image-dtb \
-              kernel-output/
+          if [ -f "$BOOT/Image-dtb" ]; then
+              cp "$BOOT/Image-dtb" kernel-output/
           fi
 
-          # Image.gz-dtb
-          if [ -f kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp \
-              kernel/out/arch/arm64/boot/Image.gz-dtb \
-              kernel-output/
+          if [ -f "$BOOT/Image.gz-dtb" ]; then
+              cp "$BOOT/Image.gz-dtb" kernel-output/
           fi
 
           # DTB / DTBO
-          find \
-            kernel/out/arch/arm64/boot \
+          find "$BOOT" \
             -type f \
             \( \
               -name "*.dtb" \
@@ -351,17 +504,16 @@ jobs:
             \) \
             -exec cp {} kernel-output/ \;
 
-          # Config
+          # Kernel config
           if [ -f kernel/out/.config ]; then
-            cp \
-              kernel/out/.config \
-              kernel-output/kernel.config
+              cp kernel/out/.config \
+                 kernel-output/kernel.config
           fi
 
           echo
-          echo "======================================"
-          echo "        FINAL FILES"
-          echo "======================================"
+          echo "=========================================="
+          echo "FINAL ARTIFACT"
+          echo "=========================================="
 
           ls -lah kernel-output
 
@@ -373,7 +525,7 @@ jobs:
           test "$COUNT" -gt 0
 
       # ============================================================
-      # 13. Upload
+      # 17. Upload
       # ============================================================
       - name: Upload RMX1827 Kernel
         uses: actions/upload-artifact@v4
