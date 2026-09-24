@@ -63,7 +63,16 @@ jobs:
           echo "Resuming previous build state (Incremental Build)..."
         fi
 
-        # NOW create stubs AFTER clean/defconfig so they stay safe
+        # Create missing helio-dvforc.h in global include folder so compiler finds it instantly
+        mkdir -p include
+        cat << 'EOF' > include/helio-dvforc.h
+        #ifndef HELIO_DVFORC_H
+        #define HELIO_DVFORC_H
+        // Global stub header for helio-dvforc
+        #endif
+        EOF
+
+        # Create oppo_phoenix.h stub safely after clean
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
@@ -84,15 +93,6 @@ jobs:
         static inline int phx_phoenix_boot_completed(void) { return 1; }
         static inline void phx_set_boot_error(int error) { (void)error; }
 
-        #endif
-        EOF
-
-        # Create missing helio-dvforc.h stub safely after clean
-        mkdir -p drivers/devfreq
-        cat << 'EOF' > drivers/devfreq/helio-dvforc.h
-        #ifndef HELIO_DVFORC_H
-        #define HELIO_DVFORC_H
-        // Stub header for helio-dvforc
         #endif
         EOF
 
