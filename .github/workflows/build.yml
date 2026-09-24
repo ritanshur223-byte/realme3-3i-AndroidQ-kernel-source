@@ -19,7 +19,7 @@ jobs:
         apt-get update
         apt-get install -y --no-install-recommends \
           ca-certificates curl build-essential bc bison flex libssl-dev libncurses5-dev \
-          libelf-dev liblz4-tool git ccache lzop python3 python3-pip sed make
+          libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 sed make
         update-ca-certificates
 
     # Cache GCC toolchains so they are never downloaded twice
@@ -50,6 +50,9 @@ jobs:
 
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
+
+        # Fix python interpreter path for old kernel scripts
+        ln -sf /usr/bin/python2 /usr/bin/python
 
         # Create complete stub header with all missing panic/boot macros for oppo_phoenix.h
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
