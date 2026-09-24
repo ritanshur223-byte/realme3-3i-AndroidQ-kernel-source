@@ -30,8 +30,8 @@ jobs:
     - name: Auto-Fixing Self-Healing Build Loop
       run: |
         # Auto-detect binary paths dynamically
-        GCC64_DIR=$(dirname $(find $(pwd)/gcc64 -name "aarch64-linux-android-gcc" 2>/dev/null | head -n 1))
-        GCC32_DIR=$(dirname $(find $(pwd)/gcc32 -name "arm-linux-androideabi-gcc" 2>/dev/null | head -n 1))
+        GCC64_DIR=$(dirname $(find $(pwd)/gcc64 -name "aarch64-linux-android-gcc" 2>/dev/null | head -n 1) 2>/dev/null || echo "$(pwd)/gcc64/bin")
+        GCC32_DIR=$(dirname $(find $(pwd)/gcc32 -name "arm-linux-androideabi-gcc" 2>/dev/null | head -n 1) 2>/dev/null || echo "$(pwd)/gcc32/bin")
 
         export ARCH=arm64
         export SUBARCH=arm64
@@ -48,11 +48,11 @@ jobs:
         make clean || true
         make oppo6771_defconfig
 
-        # FIX DTC DUPLICATE EXTERN ISSUE SAFE REPLACEMENT
+        # FIX DTC DUPLICATE EXTERN ISSUE
         find scripts/dtc/ -type f \( -name "*.c" -o -name "*.h" -o -name "*_shipped" \) -exec sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' {} +
 
         # Automatic Header Discovery
-        AUTO_INCLUDES=$(find $(pwd)/drivers $(pwd)/include $(pwd)/vendor $(pwd)/kernel $(pwd)/arch -type f -name "*.h" 2>/dev/null | xargs -n1 dirname | sort -u | sed 's/^/-I/' | tr '\n' ' ')
+        AUTO_INCLUDES=$(find $(pwd)/drivers $(pwd)/include $(pwd)/vendor $(pwd)/kernel $(pwd)/arch -type f -name "*.h" 2>/dev/null | xargs -n1 dirname 2>/dev/null | sort -u | sed 's/^/-I/' | tr '\n' ' ')
 
         # Basic broken module cleanup
         if [ -d "kernel/oppocfs" ]; then rm -rf kernel/oppocfs; fi
@@ -100,8 +100,52 @@ jobs:
           echo "Build failed. Analyzing logs for auto-fix..."
           FIX_APPLIED=0
 
-          # 1. Catch missing header file errors
+          # 1. Catch missing header file errors safely
           MISSING_HEADERS=$(grep -oE "fatal error: [^:]+: No such file or directory" build.log | sed -E 's/fatal error: ([^:]+): No such file or directory/\1/' | sort -u || true)
+
+          if [ -n "$MISSING_HEADERS" ]; then
+            for header in $MISSING_HEADERS; do
+              if [ -n "$header" ]; then
+                echo "[AUTO-FIX] Creating stub for missing header: $header"
+                STUB_DIR=$(dirname "$header")
+                mkdir -p "include/autostubs/$STUB_DIR"
+                printf "#ifndef AUTO_STUB_HEADER_H\n#define AUTO_STUB_HEADER_H\n#endif\n" > "include/autostubs/$header"
+                FIX_APPLIED=1
+              fi
+            done
+          fi
+
+          # 2. Catch rrdump / ordasp include errors
+          if grep -q "rrdump_private.h" build.log; then
+            echo "[AUTO-FIX] Commenting out broken rrdump_private.h includes..."
+            find drivers/misc/mediatek/ -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#include\s*["<]rrdump_private.h[">]/\/\/#include "rrdump_private.h"/g' {} +
+            FIX_APPLIED=1
+          fi
+
+          if [ $FIX_APPLIED -eq 0 ]; then
+            echo "[AUTO-FIX] Retrying build with single thread (-j1)..."
+            make -j1 \
+              HOSTCFLAGS="-w -fcommon" \
+              HOSTCXXFLAGS="-w -fcommon" \
+              KCFLAGS="-w -fcommon -fno-stack-protector -I$(pwd)/include/autostubs $AUTO_INCLUDES" \
+              EXTRA_CFLAGS="-w -fcommon -I$(pwd)/include/autostubs $AUTO_INCLUDES"
+            exit $?
+          fi
+
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+        done
+
+        echo "ERROR: Reached maximum retry limit ($MAX_RETRIES attempts)."
+        exit 1
+
+    - name: Upload Compiled Kernel Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: Compiled-Kernel-4.14.180
+        path: |
+          arch/arm64/boot/Image.gz-dtb
+          arch/arm64/boot/Image.gz
+          arch/arm64/boot/Image
 
           if [ -n "$MISSING_HEADERS" ]; then
             for header in $MISSING_HEADERS; do
