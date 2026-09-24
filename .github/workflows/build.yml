@@ -13,13 +13,13 @@ jobs:
     - name: Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: Install Dependencies & Healing Tools
+    - name: Install Dependencies & Libfdt Fix
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get install -y --no-install-recommends \
           ca-certificates curl build-essential bc bison flex libssl-dev libncurses5-dev \
-          libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 sed make
+          libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 libfdt-dev sed make
         update-ca-certificates
 
     - name: Clone GCC Toolchain
@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Auto-Healing & Smart Kernel Compilation
+    - name: Compile Kernel (Tested Auto-Healing)
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -40,11 +40,7 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
-        echo "=========================================="
-        echo "   RUNNING AUTO-HEALING SOURCE PATCHER    "
-        echo "=========================================="
-
-        # Auto-heal root Makefile and scripts/Makefile.host for -fcommon strict errors
+        # Auto-heal Makefiles for -fcommon strict errors
         if [ -f "Makefile" ]; then
           sed -i 's/KBUILD_HOSTCFLAGS   :=/KBUILD_HOSTCFLAGS   ?= -fcommon -Wno-error/' Makefile || true
         fi
@@ -52,7 +48,6 @@ jobs:
           sed -i 's/HOSTCFLAGS_/HOSTCFLAGS_ ?= -fcommon /g' scripts/Makefile.host || true
         fi
 
-        # Clean and generate config
         make clean || true
         make oppo6771_defconfig
 
@@ -63,36 +58,14 @@ jobs:
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
         fi
 
-        echo "=========================================="
-        echo "      STARTING AUTO-HEALING BUILD LOOP    "
-        echo "=========================================="
+        # Build scripts safely first to resolve dtc / libfdt dependencies
+        make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        # Attempt 1: Full parallel build with explicit host flags injected
+        # Run full parallel compilation
         make -j$(nproc --all) \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
-          KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector" || {
-            
-            echo "------------------------------------------"
-            echo "⚠️ First attempt failed! Triggering Auto-Heal Fallback..."
-            echo "------------------------------------------"
-            
-            # Attempt 2: Clean, re-configure, build scripts safely on single core first, then parallel
-            make clean
-            make oppo6771_defconfig
-            
-            sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
-            echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
-            
-            echo "Building host tools and scripts sequentially (-j1)..."
-            make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
-            
-            echo "Resuming full parallel build..."
-            make -j$(nproc --all) \
-              HOSTCFLAGS="-fcommon -Wno-error" \
-              HOSTCXXFLAGS="-fcommon -Wno-error" \
-              KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
-          }
+          KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
@@ -102,3 +75,4 @@ jobs:
           arch/arm64/boot/Image.gz-dtb
           arch/arm64/boot/Image.gz
           arch/arm64/boot/Image
+          
