@@ -18,12 +18,12 @@ jobs:
           build-essential bc bison flex libssl-dev libncurses5-dev \
           libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 sed make
 
-    - name: Clone LineageOS GCC Toolchains
+    - name: Clone Official AOSP GCC Toolchains
       run: |
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
+        git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
+        git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel
+    - name: Fast Incremental Kernel Compilation
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -35,11 +35,14 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
+        # Fix python interpreter path
+        sudo ln -sf /usr/bin/python2 /usr/bin/python
+
         # Clean build setup
         make clean || true
         make oppo6771_defconfig
 
-        # 1. CREATE STUB HEADERS
+        # 1. CREATE STUB HEADERS FOR MISSING FILES
         mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core
 
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
@@ -66,18 +69,7 @@ jobs:
         #endif
         EOF
 
-        # 2. EXACT FIX FOR LINE 2700 (rrdump & ordasp)
-        mkdir -p drivers/misc/mediatek/see/ordasp
-        mkdir -p drivers/misc/mediatek/see/rrdump
-        mkdir -p drivers/misc/mediatek/aee/rrdump
-        
-        touch drivers/misc/mediatek/see/ordasp/rrdump_private.h
-        touch drivers/misc/mediatek/see/rrdump/rrdump_private.h
-        touch drivers/misc/mediatek/aee/rrdump/rrdump_private.h
-
-        find drivers/misc/mediatek/ -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#include\s*["<]rrdump_private.h[">]/\/\/#include "rrdump_private.h"/g' {} +
-
-        # 3. OPPO PHOENIX STUB
+        # 2. OPPO PHOENIX STUB
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
@@ -101,9 +93,10 @@ jobs:
         #endif
         EOF
 
-        # 4. REMOVE BROKEN MODULES
+        # 3. REMOVE BROKEN MODULES
         if [ -d "kernel/oppocfs" ]; then
           rm -rf kernel/oppocfs
+          echo "Removed kernel/oppocfs successfully."
         fi
         if [ -f "kernel/Makefile" ]; then
           sed -i '/oppocfs/d' kernel/Makefile || true
@@ -113,7 +106,7 @@ jobs:
           sed -i 's/pr_info("Registering sdcardfs " SDCARDFS_VERSION/pr_info("Registering sdcardfs v2.0"/g' fs/sdcardfs/main.c || true
         fi
 
-        # 5. DISABLE VDSO & STACK PROTECTOR
+        # 4. DISABLE STACK PROTECTOR & VDSO
         if [ -f ".config" ]; then
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
@@ -124,7 +117,7 @@ jobs:
           grep -q "# CONFIG_VDSO is not set" .config || echo "# CONFIG_VDSO is not set" >> .config
         fi
 
-        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8 -I$(pwd)/drivers/misc/mediatek/see/ordasp -I$(pwd)/drivers/misc/mediatek/aee/rrdump"
+        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8"
 
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
@@ -132,7 +125,14 @@ jobs:
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
           KCFLAGS="-w -fno-stack-protector $INCLUDES" \
-          EXTRA_CFLAGS="-w $INCLUDES"
+          EXTRA_CFLAGS="-w $INCLUDES" || {
+            echo "Parallel build failed! Retrying with single thread..."
+            make -j1 \
+              HOSTCFLAGS="-w" \
+              HOSTCXXFLAGS="-w" \
+              KCFLAGS="-w -fno-stack-protector $INCLUDES" \
+              EXTRA_CFLAGS="-w $INCLUDES"
+          }
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
@@ -142,4 +142,3 @@ jobs:
           arch/arm64/boot/Image.gz-dtb
           arch/arm64/boot/Image.gz
           arch/arm64/boot/Image
-          
