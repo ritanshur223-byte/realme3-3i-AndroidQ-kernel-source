@@ -102,14 +102,14 @@ jobs:
         fi
 
         # Step 1: Build scripts safely
-        make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
+        make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel (Will skip already compiled files and resume fast, ignoring all warnings)
+        # Step 2: Compile kernel suppressing all warnings (-w) to prevent any sudden exit code 2
         make -j4 \
-          HOSTCFLAGS="-fcommon -Wno-error" \
-          HOSTCXXFLAGS="-fcommon -Wno-error" \
-          KCFLAGS="-Wno-error -fno-stack-protector" \
-          EXTRA_CFLAGS="-Wno-error"
+          HOSTCFLAGS="-w" \
+          HOSTCXXFLAGS="-w" \
+          KCFLAGS="-w -fno-stack-protector" \
+          EXTRA_CFLAGS="-w"
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
