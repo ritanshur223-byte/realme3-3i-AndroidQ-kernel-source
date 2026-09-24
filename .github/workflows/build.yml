@@ -24,10 +24,11 @@ jobs:
             libssl-dev \
             rsync \
             unzip \
-            zip \
-            docker.io
+            zip
 
-          sudo systemctl start docker
+      - name: Check Docker
+        run: |
+          docker --version
 
       - name: Clone kernel source
         run: |
@@ -43,14 +44,14 @@ jobs:
 
           echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
-      - name: Check compiler
+      - name: Check GCC
         run: |
           which aarch64-linux-android-gcc
           aarch64-linux-android-gcc --version
 
-      - name: Setup Python 2 wrapper
+      - name: Create Python 2 launcher
         run: |
-          cat > /usr/local/bin/python2-docker <<'EOF'
+          cat > /tmp/python2-docker <<'EOF'
           #!/bin/bash
           exec docker run --rm \
             -v "$GITHUB_WORKSPACE/kernel:/kernel" \
@@ -59,12 +60,14 @@ jobs:
             python2 "$@"
           EOF
 
-          sudo chmod +x /usr/local/bin/python2-docker
+          chmod +x /tmp/python2-docker
 
-      - name: Patch DrvGen launcher
+          sudo cp /tmp/python2-docker /usr/local/bin/python2-docker
+
+      - name: Patch DrvGen for Python 2
         working-directory: kernel
         run: |
-          cp tools/dct/DrvGen.py tools/dct/DrvGen.py.real
+          mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
 
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/bash
@@ -101,7 +104,9 @@ jobs:
         working-directory: kernel
         run: |
           echo "===== KERNEL OUTPUT ====="
-          find out/arch/arm64/boot -type f -print
+          find out/arch/arm64/boot \
+            -type f \
+            -print
 
       - name: Prepare artifact
         run: |
