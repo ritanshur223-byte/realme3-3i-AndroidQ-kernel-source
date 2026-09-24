@@ -13,13 +13,13 @@ jobs:
     - name: Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: Install Dependencies (SSL & Fast Mode)
+    - name: Install Dependencies & Healing Tools
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get install -y --no-install-recommends \
           ca-certificates curl build-essential bc bison flex libssl-dev libncurses5-dev \
-          libelf-dev liblz4-tool git ccache lzop python2 python-is-python2
+          libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 sed make
         update-ca-certificates
 
     - name: Clone GCC Toolchain
@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel (In-Tree Build)
+    - name: Auto-Healing & Smart Kernel Compilation
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -39,20 +39,60 @@ jobs:
 
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
-        export KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
-        
-        # Fix for scripts/mod Error 2 on GCC 9+
-        export HOSTCFLAGS="-fcommon"
-        export HOSTCXXFLAGS="-fcommon"
-        
+
+        echo "=========================================="
+        echo "   RUNNING AUTO-HEALING SOURCE PATCHER    "
+        echo "=========================================="
+
+        # Auto-heal root Makefile and scripts/Makefile.host for -fcommon strict errors
+        if [ -f "Makefile" ]; then
+          sed -i 's/KBUILD_HOSTCFLAGS   :=/KBUILD_HOSTCFLAGS   ?= -fcommon -Wno-error/' Makefile || true
+        fi
+        if [ -f "scripts/Makefile.host" ]; then
+          sed -i 's/HOSTCFLAGS_/HOSTCFLAGS_ ?= -fcommon /g' scripts/Makefile.host || true
+        fi
+
+        # Clean and generate config
         make clean || true
         make oppo6771_defconfig
-        
-        sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
-        sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
-        echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
 
-        make -j$(nproc --all)
+        # Auto-heal .config for stack protector issues
+        if [ -f ".config" ]; then
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+        fi
+
+        echo "=========================================="
+        echo "      STARTING AUTO-HEALING BUILD LOOP    "
+        echo "=========================================="
+
+        # Attempt 1: Full parallel build with explicit host flags injected
+        make -j$(nproc --all) \
+          HOSTCFLAGS="-fcommon -Wno-error" \
+          HOSTCXXFLAGS="-fcommon -Wno-error" \
+          KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector" || {
+            
+            echo "------------------------------------------"
+            echo "⚠️ First attempt failed! Triggering Auto-Heal Fallback..."
+            echo "------------------------------------------"
+            
+            # Attempt 2: Clean, re-configure, build scripts safely on single core first, then parallel
+            make clean
+            make oppo6771_defconfig
+            
+            sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
+            echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+            
+            echo "Building host tools and scripts sequentially (-j1)..."
+            make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
+            
+            echo "Resuming full parallel build..."
+            make -j$(nproc --all) \
+              HOSTCFLAGS="-fcommon -Wno-error" \
+              HOSTCXXFLAGS="-fcommon -Wno-error" \
+              KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
+          }
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
