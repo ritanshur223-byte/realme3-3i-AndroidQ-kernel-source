@@ -63,8 +63,8 @@ jobs:
           echo "Resuming previous build state (Incremental Build)..."
         fi
 
-        # CREATE ALL MISSING STUB HEADERS IN GLOBAL INCLUDE PATHS
-        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom
+        # CREATE ALL STUB HEADERS FOR MISSING FILES
+        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core
 
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
         #ifndef HELIO_DVFORC_H
@@ -84,6 +84,13 @@ jobs:
         #ifndef __SOC_QCOM_SMEM_H
         #define __SOC_QCOM_SMEM_H
         // Global stub header for Qualcomm SMEM
+        #endif
+        EOF
+
+        cat << 'EOF' > drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core/firmware.h
+        #ifndef CORE_FIRMWARE_H
+        #define CORE_FIRMWARE_H
+        // Stub header for touchscreen core firmware
         #endif
         EOF
 
@@ -136,21 +143,24 @@ jobs:
           grep -q "# CONFIG_VDSO is not set" .config || echo "# CONFIG_VDSO is not set" >> .config
         fi
 
+        # Define all include paths variable for clean command usage
+        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8"
+
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel with include paths for drivers
+        # Step 2: Compile kernel with all custom include paths
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
-          KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon" \
-          EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon" || {
+          KCFLAGS="-w -fno-stack-protector $INCLUDES" \
+          EXTRA_CFLAGS="-w $INCLUDES" || {
             echo "Parallel build failed! Retrying with single thread to catch exact error..."
             make -j1 \
               HOSTCFLAGS="-w" \
               HOSTCXXFLAGS="-w" \
-              KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon" \
-              EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon"
+              KCFLAGS="-w -fno-stack-protector $INCLUDES" \
+              EXTRA_CFLAGS="-w $INCLUDES"
           }
 
     - name: Upload Compiled Kernel Image
