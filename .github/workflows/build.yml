@@ -24,7 +24,10 @@ jobs:
             libssl-dev \
             rsync \
             unzip \
-            zip
+            zip \
+            docker.io
+
+          sudo systemctl start docker
 
       - name: Clone kernel source
         run: |
@@ -40,18 +43,35 @@ jobs:
 
           echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
-      - name: Check GCC
+      - name: Check compiler
         run: |
           which aarch64-linux-android-gcc
           aarch64-linux-android-gcc --version
 
-      - name: Setup Python 2
+      - name: Setup Python 2 wrapper
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python2
-          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
+          cat > /usr/local/bin/python2-docker <<'EOF'
+          #!/bin/bash
+          exec docker run --rm \
+            -v "$GITHUB_WORKSPACE/kernel:/kernel" \
+            -w /kernel \
+            python:2.7 \
+            python2 "$@"
+          EOF
 
-          python --version
+          sudo chmod +x /usr/local/bin/python2-docker
+
+      - name: Patch DrvGen launcher
+        working-directory: kernel
+        run: |
+          cp tools/dct/DrvGen.py tools/dct/DrvGen.py.real
+
+          cat > tools/dct/DrvGen.py <<'EOF'
+          #!/bin/bash
+          exec /usr/local/bin/python2-docker tools/dct/DrvGen.py.real "$@"
+          EOF
+
+          chmod +x tools/dct/DrvGen.py
 
       - name: Configure kernel
         working-directory: kernel
@@ -72,8 +92,6 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
-          python --version
-
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
@@ -83,10 +101,7 @@ jobs:
         working-directory: kernel
         run: |
           echo "===== KERNEL OUTPUT ====="
-
-          find out/arch/arm64/boot \
-            -type f \
-            -print
+          find out/arch/arm64/boot -type f -print
 
       - name: Prepare artifact
         run: |
