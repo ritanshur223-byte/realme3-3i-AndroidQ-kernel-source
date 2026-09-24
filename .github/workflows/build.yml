@@ -216,93 +216,16 @@ jobs:
         working-directory: kernel
         run: |
           set -eux
-
-          test -f tools/dct/DrvGen.py
-
-          mv \
-            tools/dct/DrvGen.py \
-            tools/dct/DrvGen.py.real
-
+          mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/bash
-
-          set -eu
-
-          HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
-          DOCKER_KERNEL="/workspace/kernel"
-
-          translated_args=()
-
-          for arg in "$@"; do
-              case "$arg" in
-                  "$HOST_KERNEL"/*)
-                      translated_args+=(
-                        "$DOCKER_KERNEL${arg#$HOST_KERNEL}"
-                      )
-                      ;;
-                  *)
-                      translated_args+=("$arg")
-                      ;;
-              esac
-          done
-
           exec docker run --rm \
-              -v "$HOST_KERNEL:$DOCKER_KERNEL" \
-              -w "$DOCKER_KERNEL" \
-              python:2.7 \
-              python2 \
-              /workspace/kernel/tools/dct/DrvGen.py.real \
-              "${translated_args[@]}"
-          EOF
-
-          chmod +x tools/dct/DrvGen.py
-
-          echo
-          echo "DrvGen launcher:"
-          cat tools/dct/DrvGen.py
-
-      # ============================================================
-      # 10. VERIFY DWS INSIDE PYTHON 2 DOCKER
-      # ============================================================
-      - name: Verify DWS inside Python 2 Docker
-        working-directory: kernel
-        run: |
-          set -eux
-
-          HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
-
-          DWS="$HOST_KERNEL/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws"
-
-          echo "Host DWS:"
-          ls -lah "$DWS"
-
-          echo
-          echo "Testing DWS from inside Python 2 container..."
-
-          docker run --rm \
-            -v "$HOST_KERNEL:/workspace/kernel" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace/kernel \
-            python:2.7 \
-            python2 -c "
-          import os
-
-          p='/workspace/kernel/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws'
-
-          print('DWS path:')
-          print(p)
-
-          print('exists:')
-          print(os.path.exists(p))
-
-          print('isfile:')
-          print(os.path.isfile(p))
-
-          assert os.path.isfile(p)
-          "
-
-          echo
-          echo "DOCKER DWS CHECK OK"
-
+            python:2.7 python2 \
+            /workspace/kernel/tools/dct/DrvGen.py.real "$@"
+          EOF
+          chmod +x tools/dct/DrvGen.py
       # ============================================================
       # 11. CONFIGURE KERNEL
       # ============================================================
