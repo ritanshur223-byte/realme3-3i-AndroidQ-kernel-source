@@ -78,6 +78,17 @@ jobs:
         #endif
         EOF
 
+        # Create missing helio-dvforc.h stub to fix devfreq compilation error
+        if [ ! -f "drivers/devfreq/helio-dvforc.h" ]; then
+          cat << 'EOF' > drivers/devfreq/helio-dvforc.h
+        #ifndef HELIO_DVFORC_H
+        #define HELIO_DVFORC_H
+        // Stub header for helio-dvforc
+        #endif
+        EOF
+          echo "Created missing drivers/devfreq/helio-dvforc.h successfully."
+        fi
+
         # Run clean and defconfig FIRST
         if [ ! -f ".config" ]; then
           echo "Running clean build setup..."
