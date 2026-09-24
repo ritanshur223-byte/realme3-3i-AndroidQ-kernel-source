@@ -45,9 +45,10 @@ jobs:
         export ARCH=arm64
         export SUBARCH=arm64
         
+        # Set absolute paths directly for foolproof compiler detection
+        export CROSS_COMPILE=$(pwd)/gcc64/bin/aarch64-linux-android-
+        export CROSS_COMPILE_ARM32=$(pwd)/gcc32/bin/arm-linux-androideabi-
         export PATH=$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH
-        export CROSS_COMPILE=aarch64-linux-android-
-        export CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
@@ -155,7 +156,7 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel with custom missing file patches & include paths
+        # Step 2: Compile kernel with absolute paths & include paths
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
