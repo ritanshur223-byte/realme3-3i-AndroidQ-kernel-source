@@ -38,7 +38,7 @@ jobs:
         export GIT_TERMINAL_PROMPT=0
         git config --global http.sslVerify false
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
+        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_arm_arm-linux-androideabi-4.9 gcc32
 
     - name: Fast Incremental Kernel Compilation
       run: |
@@ -64,8 +64,8 @@ jobs:
           echo "Resuming previous build state (Incremental Build)..."
         fi
 
-        # CREATE ALL STUB HEADERS EXACTLY WHERE COMPILER WANTS THEM
-        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core drivers/misc/mediatek/aee/rrdump
+        # CREATE STUB HEADERS FOR OTHER MISSING FILES
+        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core
 
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
         #ifndef HELIO_DVFORC_H
@@ -91,14 +91,15 @@ jobs:
         #endif
         EOF
 
-        # CREATE rrdump_private.h DIRECTLY INSIDE ITS FOLDER
-        cat << 'EOF' > drivers/misc/mediatek/aee/rrdump/rrdump_private.h
-        #ifndef RRDUMP_PRIVATE_H
-        #define RRDUMP_PRIVATE_H
-        #endif
-        EOF
+        # FOOLPROOF FIND & PATCH FOR RRDUMP ERROR
+        echo "Searching and patching rrdump_panic_mtt.c automatically..."
+        find . -type f -name "rrdump_panic_mtt.c" | while read file; do
+          sed -i 's/#include\s*["<]rrdump_private.h[">]/\/\/#include "rrdump_private.h"/g' "$file"
+          touch "$(dirname "$file")/rrdump_private.h"
+          echo "Successfully patched: $file"
+        done
 
-        # Create oppo_phoenix.h stub safely after clean
+        # Create oppo_phoenix.h stub safely
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
@@ -147,13 +148,13 @@ jobs:
           grep -q "# CONFIG_VDSO is not set" .config || echo "# CONFIG_VDSO is not set" >> .config
         fi
 
-        # Define all include paths variable
-        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8 -I$(pwd)/drivers/misc/mediatek/aee/rrdump"
+        # Define include paths variable
+        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8"
 
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel with all custom include paths
+        # Step 2: Compile kernel with custom include paths
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
