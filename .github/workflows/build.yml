@@ -51,7 +51,7 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
-        # Create complete stub header with all missing macros for oppo_phoenix.h
+        # Create complete stub header with all missing panic/boot macros for oppo_phoenix.h
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
@@ -65,7 +65,12 @@ jobs:
         #define KERNEL_DRIVER_INIT_DONE 6
         #define KERNEL_DO_INITCALLS_DONE 7
 
+        #define ERROR_KERNEL_PANIC 10
+        #define ERROR_HWT 11
+
         static inline void phx_set_boot_stage(int stage) { (void)stage; }
+        static inline int phx_phoenix_boot_completed(void) { return 1; }
+        static inline void phx_set_boot_error(int error) { (void)error; }
 
         #endif
         EOF
@@ -94,11 +99,12 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        # Step 2: Compile kernel (Will skip already compiled files and resume fast)
+        # Step 2: Compile kernel (Will skip already compiled files and resume fast, ignoring all warnings)
         make -j4 \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
-          KCFLAGS="-Wno-error -fno-stack-protector"
+          KCFLAGS="-Wno-error -fno-stack-protector" \
+          EXTRA_CFLAGS="-Wno-error"
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
