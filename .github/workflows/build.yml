@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel
+    - name: Compile Kernel (In-Tree Build)
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -39,25 +39,27 @@ jobs:
 
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
-        
-        # Stack protector error fix
         export KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
         
-        make O=out oppo6771_defconfig
+        # Clean any previous failed build objects
+        make clean || true
+        
+        # Load defconfig directly (In-Tree)
+        make oppo6771_defconfig
         
         # Disable stack protector in .config if enabled
-        sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' out/.config
-        sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' out/.config
-        echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> out/.config
+        sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
+        sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
+        echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
 
-        make -j$(nproc --all) O=out
+        # Run full parallel compilation directly
+        make -j$(nproc --all)
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
       with:
         name: Compiled-Kernel-4.14.180
         path: |
-          out/arch/arm64/boot/Image.gz-dtb
-          out/arch/arm64/boot/Image.gz
-          out/arch/arm64/boot/Image
-          
+          arch/arm64/boot/Image.gz-dtb
+          arch/arm64/boot/Image.gz
+          arch/arm64/boot/Image
