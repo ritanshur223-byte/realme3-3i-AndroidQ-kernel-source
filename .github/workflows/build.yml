@@ -63,12 +63,27 @@ jobs:
           echo "Resuming previous build state (Incremental Build)..."
         fi
 
-        # CREATE STUB FOR helio-dvforc.h DIRECTLY IN drivers/devfreq/
-        mkdir -p drivers/devfreq
+        # CREATE STUBS FOR ALL MISSING HEADERS
+        mkdir -p drivers/devfreq drivers/extcon include
+
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
         #ifndef HELIO_DVFORC_H
         #define HELIO_DVFORC_H
         // Stub header for helio-dvforc
+        #endif
+        EOF
+
+        cat << 'EOF' > drivers/extcon/extcon_usb.h
+        #ifndef EXTCON_USB_H
+        #define EXTCON_USB_H
+        // Stub header for extcon_usb
+        #endif
+        EOF
+
+        cat << 'EOF' > include/extcon_usb.h
+        #ifndef EXTCON_USB_H
+        #define EXTCON_USB_H
+        // Global stub header for extcon_usb
         #endif
         EOF
 
@@ -124,18 +139,18 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel and force compiler to look into drivers/devfreq using -I flag
+        # Step 2: Compile kernel with include paths for both devfreq and extcon drivers
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
-          KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq" \
-          EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq" || {
+          KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon" \
+          EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon" || {
             echo "Parallel build failed! Retrying with single thread to catch exact error..."
             make -j1 \
               HOSTCFLAGS="-w" \
               HOSTCXXFLAGS="-w" \
-              KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq" \
-              EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq"
+              KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon" \
+              EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon"
           }
 
     - name: Upload Compiled Kernel Image
