@@ -41,18 +41,17 @@ jobs:
         export KBUILD_BUILD_HOST=github-actions
         export KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
         
-        # Clean any previous failed build objects
-        make clean || true
+        # Fix for scripts/mod Error 2 on GCC 9+
+        export HOSTCFLAGS="-fcommon"
+        export HOSTCXXFLAGS="-fcommon"
         
-        # Load defconfig directly (In-Tree)
+        make clean || true
         make oppo6771_defconfig
         
-        # Disable stack protector in .config if enabled
         sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
         sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
         echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
 
-        # Run full parallel compilation directly
         make -j$(nproc --all)
 
     - name: Upload Compiled Kernel Image
