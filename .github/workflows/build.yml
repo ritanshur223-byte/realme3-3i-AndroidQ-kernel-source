@@ -9,9 +9,13 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # 1. Dependencies
+      # ============================================================
       - name: Install dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             bc \
             bison \
@@ -26,17 +30,20 @@ jobs:
             unzip \
             zip
 
-      - name: Check Docker
-        run: |
-          docker --version
-          docker run --rm python:2.7 python --version
+      # ============================================================
+      # 2. Checkout YOUR fork
+      # ============================================================
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: ritanshur223-byte/realme3-3i-AndroidQ-kernel-source
+          ref: master
+          path: kernel
+          fetch-depth: 1
 
-      - name: Clone kernel source
-        run: |
-          git clone --depth=1 \
-            https://github.com/realme-kernel-opensource/realme3-3i-AndroidQ-kernel-source.git \
-            kernel
-
+      # ============================================================
+      # 3. Setup GCC 4.9
+      # ============================================================
       - name: Setup AArch64 GCC 4.9
         run: |
           git clone --depth=1 \
@@ -45,22 +52,50 @@ jobs:
 
           echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
-      - name: Check GCC
+      - name: Check compiler
         run: |
           which aarch64-linux-android-gcc
           aarch64-linux-android-gcc --version
 
-      - name: Check DWS file
+      # ============================================================
+      # 4. Check source
+      # ============================================================
+      - name: Check kernel source
         working-directory: kernel
         run: |
-          echo "Checking required DWS file..."
-          ls -lah drivers/misc/mediatek/dws/mt6771/
-          test -f drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+          echo "===== KERNEL SOURCE ====="
+          pwd
 
-      - name: Create Python 2 DrvGen wrapper
+          echo
+          echo "===== KERNEL VERSION ====="
+          head -n 6 Makefile
+
+          echo
+          echo "===== DEFCONFIG ====="
+          test -f arch/arm64/configs/oppo6771_defconfig
+          echo "oppo6771_defconfig OK"
+
+          echo
+          echo "===== DWS ====="
+          test -f drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+          echo "oppo6771_18601.dws OK"
+
+      # ============================================================
+      # 5. Check Docker / Python 2
+      # ============================================================
+      - name: Check Python 2 container
+        run: |
+          docker --version
+          docker run --rm python:2.7 python2 --version
+
+      # ============================================================
+      # 6. Python 2 DrvGen wrapper
+      # ============================================================
+      - name: Setup DrvGen Python 2 wrapper
         run: |
           cat > /tmp/python2-drvgen <<'EOF'
           #!/bin/bash
+          set -e
 
           HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
 
@@ -77,7 +112,7 @@ jobs:
             esac
           done
 
-          exec docker run --rm \
+          docker run --rm \
             -v "$HOST_KERNEL:/kernel" \
             -w /kernel \
             python:2.7 \
@@ -87,6 +122,9 @@ jobs:
           chmod +x /tmp/python2-drvgen
           sudo cp /tmp/python2-drvgen /usr/local/bin/python2-drvgen
 
+      # ============================================================
+      # 7. Replace DrvGen launcher
+      # ============================================================
       - name: Patch DrvGen launcher
         working-directory: kernel
         run: |
@@ -94,11 +132,15 @@ jobs:
 
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/bash
-          exec /usr/local/bin/python2-drvgen tools/dct/DrvGen.py.real "$@"
+          exec /usr/local/bin/python2-drvgen \
+            tools/dct/DrvGen.py.real "$@"
           EOF
 
           chmod +x tools/dct/DrvGen.py
 
+      # ============================================================
+      # 8. Configure
+      # ============================================================
       - name: Configure kernel
         working-directory: kernel
         run: |
@@ -106,61 +148,104 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
-          make O=out \
+          make \
+            O=out \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-android- \
+            srctree="$GITHUB_WORKSPACE/kernel" \
             oppo6771_defconfig
 
+          echo
+          echo "===== CONFIG CHECK ====="
+          grep -E \
+            'CONFIG_ARCH_MEDIATEK|CONFIG_MACH_MT6771|CONFIG_BUILD_ARM64' \
+            out/.config || true
+
+      # ============================================================
+      # 9. Build
+      # ============================================================
       - name: Build kernel
         working-directory: kernel
         run: |
+          set -e
+
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
+
+          echo "===== BUILD START ====="
 
           make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-android- \
+            srctree="$GITHUB_WORKSPACE/kernel" \
             HOSTCFLAGS="-fcommon"
 
-      - name: Show kernel files
+          echo
+          echo "===== BUILD FINISHED ====="
+
+      # ============================================================
+      # 10. Show output
+      # ============================================================
+      - name: Show kernel output
         working-directory: kernel
         run: |
-          echo "===== KERNEL OUTPUT ====="
+          echo "===== ARM64 BOOT FILES ====="
+
           find out/arch/arm64/boot \
+            -maxdepth 3 \
             -type f \
             -print
 
-      - name: Prepare artifact
+      # ============================================================
+      # 11. Prepare artifacts
+      # ============================================================
+      - name: Prepare kernel artifact
         run: |
+          set -e
+
           mkdir -p kernel-output
 
+          # Kernel
           if [ -f kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp kernel/out/arch/arm64/boot/Image.gz-dtb kernel-output/
+            cp kernel/out/arch/arm64/boot/Image.gz-dtb \
+              kernel-output/
           fi
 
           if [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
-            cp kernel/out/arch/arm64/boot/Image.gz kernel-output/
+            cp kernel/out/arch/arm64/boot/Image.gz \
+              kernel-output/
           fi
 
           if [ -f kernel/out/arch/arm64/boot/Image ]; then
-            cp kernel/out/arch/arm64/boot/Image kernel-output/
+            cp kernel/out/arch/arm64/boot/Image \
+              kernel-output/
           fi
 
+          # DTB / DTBO
           find kernel/out/arch/arm64/boot \
             -type f \
             \( -name "*.dtb" -o -name "*.dtbo" \) \
             -exec cp {} kernel-output/ \; \
             || true
 
+          # Config
           if [ -f kernel/out/.config ]; then
-            cp kernel/out/.config kernel-output/kernel.config
+            cp kernel/out/.config \
+              kernel-output/kernel.config
           fi
 
-          echo "===== FINAL FILES ====="
+          echo
+          echo "===== FINAL ARTIFACTS ====="
           ls -lah kernel-output
 
+          # Don't upload an empty result
+          test "$(find kernel-output -type f | wc -l)" -gt 0
+
+      # ============================================================
+      # 12. Upload
+      # ============================================================
       - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
