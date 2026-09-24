@@ -72,12 +72,6 @@ jobs:
         #endif
         EOF
 
-        # FIX INCLUDE TYPE IN helio-dvforc.c FROM <> TO "" SO IT FINDS LOCAL HEADER
-        if [ -f "drivers/devfreq/helio-dvforc.c" ]; then
-          sed -i 's/#include <helio-dvforc.h>/#include "helio-dvforc.h"/g' drivers/devfreq/helio-dvforc.c
-          echo "Patched helio-dvforc.c include path successfully."
-        fi
-
         # Create oppo_phoenix.h stub safely after clean
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
@@ -130,18 +124,18 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel with auto-fallback to single-thread (-j1) if parallel build fails
+        # Step 2: Compile kernel and force compiler to look into drivers/devfreq using -I flag
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
-          KCFLAGS="-w -fno-stack-protector" \
-          EXTRA_CFLAGS="-w" || {
+          KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq" \
+          EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq" || {
             echo "Parallel build failed! Retrying with single thread to catch exact error..."
             make -j1 \
               HOSTCFLAGS="-w" \
               HOSTCXXFLAGS="-w" \
-              KCFLAGS="-w -fno-stack-protector" \
-              EXTRA_CFLAGS="-w"
+              KCFLAGS="-w -fno-stack-protector -I$(pwd)/drivers/devfreq" \
+              EXTRA_CFLAGS="-w -I$(pwd)/drivers/devfreq"
           }
 
     - name: Upload Compiled Kernel Image
