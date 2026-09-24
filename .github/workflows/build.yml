@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel Ultimate Safe Build
+    - name: Compile Kernel VDSO Bypass Build
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -43,17 +43,22 @@ jobs:
         make clean || true
         make oppo6771_defconfig
 
-        # Disable stack protector options in .config
+        # Disable stack protector options and VDSO to fix final error
         if [ -f ".config" ]; then
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+          
+          # Disable VDSO completely to bypass linking crash
+          sed -i 's/CONFIG_VDSO=y/# CONFIG_VDSO is not set/' .config || true
+          sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/' .config || true
+          echo "# CONFIG_VDSO is not set" >> .config
         fi
 
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        # Step 2: Compile kernel with safe parallelism (-j4) to prevent race conditions during linking
+        # Step 2: Compile kernel with safe parallelism
         make -j4 \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
