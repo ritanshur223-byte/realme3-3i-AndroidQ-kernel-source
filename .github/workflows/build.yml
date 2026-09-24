@@ -112,12 +112,19 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel suppressing all warnings (-w) to prevent any sudden exit code 2
+        # Step 2: Compile kernel with auto-fallback to single-thread (-j1) if parallel build fails
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
           KCFLAGS="-w -fno-stack-protector" \
-          EXTRA_CFLAGS="-w"
+          EXTRA_CFLAGS="-w" || {
+            echo "Parallel build failed! Retrying with single thread to catch exact error..."
+            make -j1 \
+              HOSTCFLAGS="-w" \
+              HOSTCXXFLAGS="-w" \
+              KCFLAGS="-w -fno-stack-protector" \
+              EXTRA_CFLAGS="-w"
+          }
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
