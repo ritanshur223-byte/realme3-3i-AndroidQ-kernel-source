@@ -35,9 +35,10 @@ jobs:
     - name: Clone GCC Toolchain (Skipped if cached)
       if: steps.cache-toolchains.outputs.cache-hit != 'true'
       run: |
+        export GIT_TERMINAL_PROMPT=0
         git config --global http.sslVerify false
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_arm_arm-linux-androideabi-4.9 gcc32
+        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
     - name: Fast Incremental Kernel Compilation
       run: |
