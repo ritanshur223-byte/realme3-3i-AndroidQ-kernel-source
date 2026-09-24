@@ -9,9 +9,13 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # 1. Dependencies
+      # ============================================================
       - name: Install dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             bc \
             bison \
@@ -27,7 +31,7 @@ jobs:
             zip
 
       # ============================================================
-      # Checkout YOUR fork
+      # 2. Checkout YOUR kernel fork
       # ============================================================
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -38,7 +42,7 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # GCC 4.9
+      # 3. AArch64 GCC 4.9
       # ============================================================
       - name: Setup AArch64 GCC 4.9
         run: |
@@ -51,36 +55,51 @@ jobs:
 
       - name: Check compiler
         run: |
+          echo "===== GCC ====="
           which aarch64-linux-android-gcc
           aarch64-linux-android-gcc --version
 
       # ============================================================
-      # Verify source
+      # 4. Verify source files
       # ============================================================
       - name: Verify kernel source
         working-directory: kernel
         run: |
+          set -e
+
           echo "===== SOURCE ====="
           pwd
 
-          echo "===== MAKEFILE ====="
+          echo
+          echo "===== KERNEL VERSION ====="
           head -n 8 Makefile
 
+          echo
           echo "===== DEFCONFIG ====="
           test -f arch/arm64/configs/oppo6771_defconfig
-          echo "oppo6771_defconfig OK"
+          echo "oppo6771_defconfig FOUND"
 
+          echo
           echo "===== DWS ====="
-          test -f drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
-          echo "oppo6771_18601.dws OK"
+          test -f \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+
+          echo "oppo6771_18601.dws FOUND"
 
       # ============================================================
-      # Python 2 for MediaTek DrvGen
+      # 5. Docker / Python 2
       # ============================================================
-      - name: Setup Python 2 DrvGen
+      - name: Setup Python 2 for DrvGen
         run: |
+          set -e
+
           docker --version
+
           docker pull python:2.7
+
+          docker run --rm \
+            python:2.7 \
+            python2 --version
 
           cat > /tmp/python2-drvgen <<'EOF'
           #!/bin/bash
@@ -96,26 +115,38 @@ jobs:
           EOF
 
           chmod +x /tmp/python2-drvgen
-          sudo cp /tmp/python2-drvgen /usr/local/bin/python2-drvgen
+
+          sudo cp \
+            /tmp/python2-drvgen \
+            /usr/local/bin/python2-drvgen
 
       # ============================================================
-      # DrvGen launcher
+      # 6. DrvGen launcher
       # ============================================================
       - name: Patch DrvGen launcher
         working-directory: kernel
         run: |
-          mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
+          set -e
+
+          test -f tools/dct/DrvGen.py
+
+          mv \
+            tools/dct/DrvGen.py \
+            tools/dct/DrvGen.py.real
 
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/bash
+
           exec /usr/local/bin/python2-drvgen \
             tools/dct/DrvGen.py.real "$@"
           EOF
 
           chmod +x tools/dct/DrvGen.py
 
+          echo "DrvGen Python 2 launcher installed"
+
       # ============================================================
-      # Configure
+      # 7. Configure
       # ============================================================
       - name: Configure kernel
         working-directory: kernel
@@ -126,20 +157,25 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
+          echo "======================================"
+          echo "        KERNEL CONFIGURATION"
+          echo "======================================"
+
           make \
             O=out \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-android- \
-            srctree="$GITHUB_WORKSPACE/kernel" \
             oppo6771_defconfig
 
           echo
-          echo "===== CONFIG CREATED ====="
+          echo "===== CONFIG CHECK ====="
+
           test -f out/.config
-          echo "out/.config OK"
+
+          echo "out/.config FOUND"
 
       # ============================================================
-      # Build kernel
+      # 8. Build kernel
       # ============================================================
       - name: Build kernel
         working-directory: kernel
@@ -151,36 +187,38 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-android-
 
           echo "======================================"
-          echo "     REALME 3i KERNEL BUILD START"
+          echo "       REALME 3i KERNEL BUILD"
           echo "======================================"
 
-          make -j"$(nproc)" \
+          make \
+            -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-android- \
-            srctree="$GITHUB_WORKSPACE/kernel" \
             HOSTCFLAGS="-fcommon"
 
           echo
           echo "======================================"
-          echo "     KERNEL BUILD FINISHED"
+          echo "       BUILD FINISHED"
           echo "======================================"
 
       # ============================================================
-      # Show output
+      # 9. Show build output
       # ============================================================
       - name: Show kernel output
         working-directory: kernel
         run: |
-          echo "===== ARM64 BOOT OUTPUT ====="
+          echo "======================================"
+          echo "          BUILD OUTPUT"
+          echo "======================================"
 
           find out/arch/arm64/boot \
-            -maxdepth 4 \
+            -maxdepth 5 \
             -type f \
             -print
 
       # ============================================================
-      # Prepare artifacts
+      # 10. Prepare artifact
       # ============================================================
       - name: Prepare kernel artifact
         run: |
@@ -188,42 +226,71 @@ jobs:
 
           mkdir -p kernel-output
 
+          # ----------------------------
+          # Kernel Image
+          # ----------------------------
+
           if [ -f kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp kernel/out/arch/arm64/boot/Image.gz-dtb \
+            cp \
+              kernel/out/arch/arm64/boot/Image.gz-dtb \
               kernel-output/
           fi
 
           if [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
-            cp kernel/out/arch/arm64/boot/Image.gz \
+            cp \
+              kernel/out/arch/arm64/boot/Image.gz \
               kernel-output/
           fi
 
           if [ -f kernel/out/arch/arm64/boot/Image ]; then
-            cp kernel/out/arch/arm64/boot/Image \
+            cp \
+              kernel/out/arch/arm64/boot/Image \
               kernel-output/
           fi
 
+          # ----------------------------
+          # DTB / DTBO
+          # ----------------------------
+
           find kernel/out/arch/arm64/boot \
             -type f \
-            \( -name "*.dtb" -o -name "*.dtbo" \) \
+            \( \
+              -name "*.dtb" \
+              -o \
+              -name "*.dtbo" \
+            \) \
             -exec cp {} kernel-output/ \; \
             || true
 
+          # ----------------------------
+          # Kernel config
+          # ----------------------------
+
           if [ -f kernel/out/.config ]; then
-            cp kernel/out/.config \
+            cp \
+              kernel/out/.config \
               kernel-output/kernel.config
           fi
 
           echo
-          echo "===== FINAL FILES ====="
+          echo "======================================"
+          echo "        FINAL KERNEL FILES"
+          echo "======================================"
+
           ls -lah kernel-output
 
-          test "$(find kernel-output -type f | wc -l)" -gt 0
+          echo
+          echo "File count:"
+          find kernel-output -type f | wc -l
+
+          test \
+            "$(find kernel-output -type f | wc -l)" \
+            -gt 0
 
       # ============================================================
-      # Upload
+      # 11. Upload artifact
       # ============================================================
-      - name: Upload kernel
+      - name: Upload RMX1827 kernel
         uses: actions/upload-artifact@v4
         with:
           name: RMX1827-Kernel
