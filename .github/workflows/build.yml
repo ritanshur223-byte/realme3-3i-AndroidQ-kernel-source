@@ -36,6 +36,11 @@ jobs:
         export PATH=$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH
         export CROSS_COMPILE=aarch64-linux-android-
         export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+        # Main CFLAGS Fix for init/main.o
+        export KBUILD_BUILD_USER=ritansh
+        export KBUILD_BUILD_HOST=github-actions
+        export KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error"
         
         make O=out oppo6771_defconfig
         make -j$(nproc --all) O=out
