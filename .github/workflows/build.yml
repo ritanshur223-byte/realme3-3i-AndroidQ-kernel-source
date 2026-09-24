@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Ultimate Error-Free Compilation
+    - name: Compile Kernel Clean Build
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -40,34 +40,20 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
-        echo "=========================================="
-        echo "   STRIPPING -Werror & FIXING SCRIPTS     "
-        echo "=========================================="
-
-        # Kill all -Werror across the entire source tree so warnings never fail the build
-        find . -name "Makefile*" -o -name "Kbuild*" | xargs sed -i 's/-Werror//g' || true
-        
-        if [ -f "scripts/Makefile.host" ]; then
-          sed -i 's/-Werror//g' scripts/Makefile.host
-        fi
-        if [ -f "scripts/mod/Makefile" ]; then
-          sed -i 's/-Werror//g' scripts/mod/Makefile
-        fi
-
         make clean || true
         make oppo6771_defconfig
 
-        # Disable stack protector options safely in .config
+        # Disable stack protector options in .config
         if [ -f ".config" ]; then
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
         fi
 
-        echo "Building scripts and mod safely first (-j1)..."
+        # Step 1: Build scripts using host compiler flags (-fcommon goes ONLY here)
         make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        echo "Running full parallel kernel compilation..."
+        # Step 2: Compile main kernel using clean target flags (NO -fcommon passed to gcc 4.9)
         make -j$(nproc --all) \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
@@ -81,3 +67,4 @@ jobs:
           arch/arm64/boot/Image.gz-dtb
           arch/arm64/boot/Image.gz
           arch/arm64/boot/Image
+          
