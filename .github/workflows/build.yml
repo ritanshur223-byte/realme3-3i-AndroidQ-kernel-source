@@ -75,6 +75,12 @@ jobs:
         #endif
         EOF
 
+        # Fix missing kernel sched header for oppocfs automatically
+        mkdir -p kernel/sched
+        if [ ! -f "kernel/sched/sched.h" ]; then
+          echo '#include <linux/sched.h>' > kernel/sched/sched.h
+        fi
+
         # Fix sdcardfs string concatenation error automatically
         if [ -f "fs/sdcardfs/main.c" ]; then
           sed -i 's/pr_info("Registering sdcardfs " SDCARDFS_VERSION/pr_info("Registering sdcardfs v2.0"/g' fs/sdcardfs/main.c || true
