@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel Final Fix
+    - name: Compile Kernel Ultimate Safe Build
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -53,8 +53,8 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        # Step 2: Compile main kernel with clean KCFLAGS (removed problematic flags)
-        make -j$(nproc --all) \
+        # Step 2: Compile kernel with safe parallelism (-j4) to prevent race conditions during linking
+        make -j4 \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
           KCFLAGS="-Wno-error -fno-stack-protector"
