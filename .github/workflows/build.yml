@@ -1,17 +1,14 @@
-name: Build Realme 3i Kernel
+name: Realme 3i RMX1827 Kernel Build
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
 
-      # -----------------------------------------
-      # 1. Install build dependencies
-      # -----------------------------------------
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -20,121 +17,98 @@ jobs:
             bison \
             build-essential \
             ccache \
-            curl \
             flex \
-            g++ \
-            gcc \
             git \
             libelf-dev \
             libncurses5-dev \
             libssl-dev \
-            lz4 \
-            make \
             python3 \
             rsync \
             unzip \
             zip
 
-      # -----------------------------------------
-      # 2. Clone your kernel source
-      # -----------------------------------------
       - name: Clone kernel source
         run: |
           git clone --depth=1 \
-            https://github.com/ritansh/realme3-3i-AndroidQ-kernel-source.git \
+            https://github.com/realme-kernel-opensource/realme3-3i-AndroidQ-kernel-source.git \
             kernel
 
-      # -----------------------------------------
-      # 3. Download Android GCC 4.9
-      # -----------------------------------------
       - name: Setup AArch64 GCC
         run: |
           git clone --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
-            gcc-aarch64
+            gcc
 
-          echo "$GITHUB_WORKSPACE/gcc-aarch64/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
-      # -----------------------------------------
-      # 4. Check compiler
-      # -----------------------------------------
       - name: Check compiler
         run: |
           which aarch64-linux-android-gcc
           aarch64-linux-android-gcc --version
 
-      # -----------------------------------------
-      # 5. Find available defconfig
-      # -----------------------------------------
-      - name: Find kernel defconfig
+      - name: Configure kernel
         working-directory: kernel
         run: |
-          echo "Available Realme defconfigs:"
-          find arch/arm64/configs -type f \
-            | grep -Ei 'rmx|realme|mtk|k35|full' \
-            || true
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
 
-      # -----------------------------------------
-      # 6. Build kernel
-      # -----------------------------------------
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-android- \
+            oppo6771_defconfig
+
       - name: Build kernel
         working-directory: kernel
-        env:
-          ARCH: arm64
-          CROSS_COMPILE: aarch64-linux-android-
         run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
 
-          echo "================================="
-          echo "Starting kernel build"
-          echo "================================="
-
-          # IMPORTANT:
-          # If your source has a different defconfig,
-          # change ONLY the line below.
-          DEFCONFIG="RMX1827_defconfig"
-
-          echo "Using defconfig: $DEFCONFIG"
-
-          make O=out ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-android- \
-            "$DEFCONFIG"
-
-          make -j$(nproc) \
+          make -j"$(nproc)" \
             O=out \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-android-
 
-      # -----------------------------------------
-      # 7. Show generated files
-      # -----------------------------------------
-      - name: Find kernel image
+      - name: Show kernel files
         working-directory: kernel
         run: |
-          echo "================================="
-          echo "Searching for kernel image..."
-          echo "================================="
+          echo "===== KERNEL OUTPUT ====="
 
-          find out -type f \
-            \( -name "Image" \
-            -o -name "Image.gz" \
-            -o -name "Image.gz-dtb" \
-            -o -name "zImage" \
-            -o -name "*.dtb" \
-            -o -name "*.dtbo" \
-            -o -name "dtbo.img" \
-            \) -print
+          find out/arch/arm64/boot \
+            -type f \
+            -print
 
-      # -----------------------------------------
-      # 8. Upload build output
-      # -----------------------------------------
-      - name: Upload compiled kernel
+      - name: Prepare artifact
+        run: |
+          mkdir -p kernel-output
+
+          if [ -f kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp kernel/out/arch/arm64/boot/Image.gz-dtb kernel-output/
+          fi
+
+          if [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
+            cp kernel/out/arch/arm64/boot/Image.gz kernel-output/
+          fi
+
+          if [ -f kernel/out/arch/arm64/boot/Image ]; then
+            cp kernel/out/arch/arm64/boot/Image kernel-output/
+          fi
+
+          find kernel/out/arch/arm64/boot \
+            -type f \
+            \( -name "*.dtb" -o -name "*.dtbo" \) \
+            -exec cp {} kernel-output/ \; \
+            || true
+
+          cp kernel/out/.config kernel-output/kernel.config
+
+          echo "===== FINAL FILES ====="
+          ls -lah kernel-output
+
+      - name: Upload kernel
         uses: actions/upload-artifact@v4
         with:
-          name: RMX1827-kernel
-          path: |
-            kernel/out/arch/arm64/boot/Image
-            kernel/out/arch/arm64/boot/Image.gz
-            kernel/out/arch/arm64/boot/Image.gz-dtb
-            kernel/out/arch/arm64/boot/dts/**/*.dtb
-            kernel/out/arch/arm64/boot/dts/**/*.dtbo
-          if-no-files-found: warn
+          name: RMX1827-Kernel
+          path: kernel-output
+          if-no-files-found: error
