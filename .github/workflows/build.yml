@@ -10,7 +10,7 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. Dependencies
+      # 1. DEPENDENCIES
       # ============================================================
       - name: Install dependencies
         run: |
@@ -33,7 +33,7 @@ jobs:
             zip
 
       # ============================================================
-      # 2. Checkout YOUR fork
+      # 2. CHECKOUT YOUR FORK
       # ============================================================
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 3. Verify exact RMX1827 source files
+      # 3. VERIFY SOURCE
       # ============================================================
       - name: Verify RMX1827 source
         working-directory: kernel
@@ -52,10 +52,11 @@ jobs:
           set -eux
 
           echo "=========================================="
-          echo "RMX1827 SOURCE CHECK"
+          echo "REALME 3i RMX1827 SOURCE CHECK"
           echo "=========================================="
 
-          echo "PWD:"
+          echo
+          echo "Kernel source:"
           pwd
 
           echo
@@ -63,34 +64,40 @@ jobs:
           git rev-parse HEAD
 
           echo
-          echo "Makefile:"
-          head -n 10 Makefile
-
-          echo
           echo "Checking defconfig..."
           test -f arch/arm64/configs/oppo6771_defconfig
+          echo "OK: oppo6771_defconfig"
 
           echo
           echo "Checking DTS..."
           test -f arch/arm64/boot/dts/mediatek/oppo6771_18601.dts
+          echo "OK: oppo6771_18601.dts"
 
           echo
           echo "Checking DWS..."
           test -f drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+          echo "OK: oppo6771_18601.dws"
 
           echo
-          echo "DWS information:"
+          echo "DWS:"
           ls -lah \
             drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
 
-          wc -c \
-            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+          echo
+          echo "DTS cust.dtsi include:"
+          grep -n "cust.dtsi" \
+            arch/arm64/boot/dts/mediatek/oppo6771_18601.dts
+
+          echo
+          echo "DrvGen command in source:"
+          grep -n "DrvGen.py.*cust_dtsi\|cust_dtsi" \
+            scripts/drvgen/drvgen.mk
 
           echo
           echo "SOURCE CHECK OK"
 
       # ============================================================
-      # 4. AArch64 GCC 4.9
+      # 4. AARCH64 GCC 4.9
       # ============================================================
       - name: Setup AArch64 GCC 4.9
         run: |
@@ -103,7 +110,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
       # ============================================================
-      # 5. Verify compiler
+      # 5. VERIFY GCC
       # ============================================================
       - name: Check compiler
         run: |
@@ -114,9 +121,9 @@ jobs:
           aarch64-linux-android-gcc --version
 
       # ============================================================
-      # 6. Check Docker + Python 2
+      # 6. PYTHON 2
       # ============================================================
-      - name: Setup Python 2 environment
+      - name: Setup Python 2
         run: |
           set -eux
 
@@ -129,7 +136,15 @@ jobs:
             python2 --version
 
       # ============================================================
-      # 7. Fix drvgen.mk output path
+      # 7. FIX DRVGEN OUTPUT PATH
+      #
+      # Original:
+      #
+      # ifndef DRVGEN_OUT
+      # DRVGEN_OUT := $(objtree)/arch/$(SRCARCH)/boot/dts
+      # endif
+      #
+      # With O=out we force it to current objtree.
       # ============================================================
       - name: Fix Driver Generator output path
         working-directory: kernel
@@ -152,63 +167,50 @@ jobs:
 
           if old not in s:
               raise SystemExit(
-                  "ERROR: DRVGEN_OUT block not found. "
-                  "Repository version is unexpected."
+                  "ERROR: expected DRVGEN_OUT block not found"
               )
 
           s = s.replace(old, new)
 
           p.write_text(s)
 
-          print("DRVGEN_OUT FIXED")
+          print("DRVGEN_OUT FIX APPLIED")
           PY
 
           echo
-          echo "DRVGEN_OUT lines:"
-          grep -n -A4 -B2 "DRVGEN_OUT" scripts/drvgen/drvgen.mk
+          echo "DRVGEN_OUT:"
+          grep -n -A4 -B2 "DRVGEN_OUT" \
+            scripts/drvgen/drvgen.mk
 
       # ============================================================
-      # 8. Enable DWS dependency explicitly
+      # 8. VERIFY WE DID NOT BREAK cust_dtsi
       # ============================================================
-      - name: Enable DWS dependency
+      - name: Verify DrvGen command
         working-directory: kernel
         run: |
           set -eux
 
-          python3 - <<'PY'
-          from pathlib import Path
+          echo "DrvGen command:"
+          grep -n -A3 -B3 \
+            "cust_dtsi" \
+            scripts/drvgen/drvgen.mk
 
-          p = Path("scripts/drvgen/drvgen.mk")
-          s = p.read_text()
+          grep -q "cust_dtsi" \
+            scripts/drvgen/drvgen.mk
 
-          old = "#DWS_FILE := $(srctree)/$(DRVGEN_PATH)/$(MTK_PROJECT).dws"
-          new = "DWS_FILE := $(srctree)/$(DRVGEN_PATH)/$(MTK_PROJECT).dws"
-
-          if old in s:
-              s = s.replace(old, new)
-              p.write_text(s)
-              print("DWS_FILE dependency enabled")
-          elif new in s:
-              print("DWS_FILE already enabled")
-          else:
-              raise SystemExit(
-                  "ERROR: Could not find DWS_FILE definition"
-              )
-          PY
-
-          grep -n "DWS_FILE" scripts/drvgen/drvgen.mk
+          echo
+          echo "OK: cust_dtsi parameter is present"
 
       # ============================================================
-      # 9. Create ROBUST Python 2 DrvGen launcher
+      # 9. PYTHON 2 DRVGEN LAUNCHER
       #
-      # IMPORTANT:
-      # Host path:
-      # /home/runner/work/.../kernel/...
+      # Host:
+      # /home/runner/work/.../kernel
       #
-      # Docker path:
-      # /workspace/kernel/...
+      # Docker:
+      # /workspace/kernel
       #
-      # Every argument is translated automatically.
+      # All host paths are translated automatically.
       # ============================================================
       - name: Install Python 2 DrvGen launcher
         working-directory: kernel
@@ -217,7 +219,9 @@ jobs:
 
           test -f tools/dct/DrvGen.py
 
-          mv tools/dct/DrvGen.py tools/dct/DrvGen.py.real
+          mv \
+            tools/dct/DrvGen.py \
+            tools/dct/DrvGen.py.real
 
           cat > tools/dct/DrvGen.py <<'EOF'
           #!/bin/bash
@@ -258,10 +262,7 @@ jobs:
           cat tools/dct/DrvGen.py
 
       # ============================================================
-      # 10. DIRECT Docker visibility test
-      #
-      # This tests the EXACT DWS file using Python 2 INSIDE Docker.
-      # If this passes, the old Error 255 path problem is eliminated.
+      # 10. VERIFY DWS INSIDE PYTHON 2 DOCKER
       # ============================================================
       - name: Verify DWS inside Python 2 Docker
         working-directory: kernel
@@ -270,16 +271,13 @@ jobs:
 
           HOST_KERNEL="$GITHUB_WORKSPACE/kernel"
 
-          echo "Host kernel:"
-          echo "$HOST_KERNEL"
+          DWS="$HOST_KERNEL/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws"
 
-          echo
           echo "Host DWS:"
-          ls -lah \
-            "$HOST_KERNEL/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws"
+          ls -lah "$DWS"
 
           echo
-          echo "Checking DWS inside Docker..."
+          echo "Testing DWS from inside Python 2 container..."
 
           docker run --rm \
             -v "$HOST_KERNEL:/workspace/kernel" \
@@ -287,10 +285,18 @@ jobs:
             python:2.7 \
             python2 -c "
           import os
+
           p='/workspace/kernel/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws'
-          print('DWS:', p)
-          print('exists:', os.path.exists(p))
-          print('isfile:', os.path.isfile(p))
+
+          print('DWS path:')
+          print(p)
+
+          print('exists:')
+          print(os.path.exists(p))
+
+          print('isfile:')
+          print(os.path.isfile(p))
+
           assert os.path.isfile(p)
           "
 
@@ -298,7 +304,7 @@ jobs:
           echo "DOCKER DWS CHECK OK"
 
       # ============================================================
-      # 11. Configure kernel
+      # 11. CONFIGURE KERNEL
       # ============================================================
       - name: Configure kernel
         working-directory: kernel
@@ -320,18 +326,21 @@ jobs:
           test -f out/.config
 
           echo
-          echo "CONFIGURATION OK"
+          echo "=========================================="
+          echo "KERNEL CONFIGURATION OK"
+          echo "=========================================="
 
           echo
-          echo "Important config:"
+          echo "Important configuration:"
+
           grep -E \
-            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_BUILD_ARM64' \
+            'CONFIG_MACH_MT6771|CONFIG_MTK_PLATFORM|CONFIG_ARCH_MTK_PROJECT|CONFIG_BUILD_ARM64_DTB' \
             out/.config || true
 
       # ============================================================
-      # 12. Check Kbuild variables
+      # 12. VERIFY OUTPUT PATHS
       # ============================================================
-      - name: Verify Kbuild Driver Generator paths
+      - name: Verify Kbuild paths
         working-directory: kernel
         run: |
           set -eux
@@ -340,29 +349,26 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
-          mkdir -p out/arch/arm64/boot/dts
-
-          echo
-          echo "Source tree:"
-          pwd
-
-          echo
-          echo "Expected DWS:"
-          realpath \
-            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
-
-          echo
-          echo "Expected output:"
-          realpath \
+          mkdir -p \
             out/arch/arm64/boot/dts
 
           echo
-          echo "DWS test:"
-          test -f \
+          echo "Source directory:"
+          pwd
+
+          echo
+          echo "DWS:"
+          realpath \
             drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
 
           echo
-          echo "OUTPUT DIRECTORY test:"
+          echo "Output directory:"
+          realpath \
+            out/arch/arm64/boot/dts
+
+          test -f \
+            drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws
+
           test -d \
             out/arch/arm64/boot/dts
 
@@ -370,9 +376,11 @@ jobs:
           echo "KBUILD PATH CHECK OK"
 
       # ============================================================
-      # 13. Run Driver Generator separately BEFORE full kernel build
+      # 13. TEST DRVGEN
       #
-      # This forces the exact problematic operation first.
+      # IMPORTANT:
+      # Parameter = cust_dtsi
+      # Generated file = cust.dtsi
       # ============================================================
       - name: Test MediaTek Driver Generator
         working-directory: kernel
@@ -383,33 +391,57 @@ jobs:
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
 
-          mkdir -p \
-            out/arch/arm64/boot/dts/oppo6771_18601
+          DWS="$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws"
+
+          OUT="$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601"
+
+          mkdir -p "$OUT"
 
           echo
           echo "=========================================="
           echo "TESTING DRVGEN"
           echo "=========================================="
 
-          tools/dct/DrvGen.py \
-            "$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws" \
-            "$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601" \
-            "$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601" \
-            cust.dtsi
+          echo
+          echo "DWS:"
+          echo "$DWS"
 
           echo
-          echo "DRVGEN TEST FINISHED"
+          echo "OUTPUT:"
+          echo "$OUT"
+
+          echo
+          echo "RUNNING DRVGEN..."
+
+          tools/dct/DrvGen.py \
+            "$DWS" \
+            "$OUT" \
+            "$OUT" \
+            cust_dtsi
+
+          echo
+          echo "=========================================="
+          echo "DRVGEN FINISHED"
+          echo "=========================================="
 
           echo
           echo "Generated files:"
+
           find \
-            out/arch/arm64/boot/dts/oppo6771_18601 \
+            "$OUT" \
             -maxdepth 2 \
             -type f \
             -print
 
-          test -f \
-            out/arch/arm64/boot/dts/oppo6771_18601/cust.dtsi
+          echo
+          echo "Checking generated cust.dtsi..."
+
+          test -f "$OUT/cust.dtsi"
+
+          echo
+          echo "cust.dtsi FOUND"
+
+          ls -lah "$OUT/cust.dtsi"
 
       # ============================================================
       # 14. FULL KERNEL BUILD
@@ -438,63 +470,95 @@ jobs:
 
           echo
           echo "=========================================="
-          echo "BUILD FINISHED"
+          echo "KERNEL BUILD FINISHED"
           echo "=========================================="
 
       # ============================================================
-      # 15. Verify final kernel
+      # 15. VERIFY FINAL OUTPUT
       # ============================================================
       - name: Verify kernel output
         working-directory: kernel
         run: |
           set -eux
 
-          echo
-          echo "Kernel output directory:"
-          ls -lah out/arch/arm64/boot/
+          BOOT="out/arch/arm64/boot"
 
           echo
-          echo "All output files:"
-          find \
-            out/arch/arm64/boot \
+          echo "=========================================="
+          echo "KERNEL OUTPUT"
+          echo "=========================================="
+
+          ls -lah "$BOOT"
+
+          echo
+          echo "All generated files:"
+
+          find "$BOOT" \
             -type f \
             -print
 
-          test -f out/arch/arm64/boot/Image
+          echo
+          echo "Checking Image..."
+
+          test -f "$BOOT/Image"
 
           echo
+          echo "=========================================="
           echo "FINAL KERNEL IMAGE EXISTS"
+          echo "=========================================="
+
+          ls -lh "$BOOT/Image"
 
       # ============================================================
-      # 16. Prepare artifact
+      # 16. PREPARE ARTIFACT
       # ============================================================
       - name: Prepare kernel artifact
         run: |
           set -eux
 
           rm -rf kernel-output
+
           mkdir -p kernel-output
 
           BOOT="kernel/out/arch/arm64/boot"
 
-          # Main kernel
+          echo "Collecting kernel files..."
+
+          # --------------------------------------------------------
+          # Image
+          # --------------------------------------------------------
           if [ -f "$BOOT/Image" ]; then
-              cp "$BOOT/Image" kernel-output/
+              cp "$BOOT/Image" \
+                kernel-output/
           fi
 
+          # --------------------------------------------------------
+          # Image.gz
+          # --------------------------------------------------------
           if [ -f "$BOOT/Image.gz" ]; then
-              cp "$BOOT/Image.gz" kernel-output/
+              cp "$BOOT/Image.gz" \
+                kernel-output/
           fi
 
+          # --------------------------------------------------------
+          # Image-dtb
+          # --------------------------------------------------------
           if [ -f "$BOOT/Image-dtb" ]; then
-              cp "$BOOT/Image-dtb" kernel-output/
+              cp "$BOOT/Image-dtb" \
+                kernel-output/
           fi
 
+          # --------------------------------------------------------
+          # Image.gz-dtb
+          # --------------------------------------------------------
           if [ -f "$BOOT/Image.gz-dtb" ]; then
-              cp "$BOOT/Image.gz-dtb" kernel-output/
+              cp "$BOOT/Image.gz-dtb" \
+                kernel-output/
           fi
 
+          # --------------------------------------------------------
           # DTB / DTBO
+          # --------------------------------------------------------
           find "$BOOT" \
             -type f \
             \( \
@@ -504,15 +568,18 @@ jobs:
             \) \
             -exec cp {} kernel-output/ \;
 
-          # Kernel config
+          # --------------------------------------------------------
+          # Config
+          # --------------------------------------------------------
           if [ -f kernel/out/.config ]; then
-              cp kernel/out/.config \
-                 kernel-output/kernel.config
+              cp \
+                kernel/out/.config \
+                kernel-output/kernel.config
           fi
 
           echo
           echo "=========================================="
-          echo "FINAL ARTIFACT"
+          echo "KERNEL ARTIFACT"
           echo "=========================================="
 
           ls -lah kernel-output
@@ -520,12 +587,12 @@ jobs:
           COUNT=$(find kernel-output -type f | wc -l)
 
           echo
-          echo "Files: $COUNT"
+          echo "Artifact files: $COUNT"
 
           test "$COUNT" -gt 0
 
       # ============================================================
-      # 17. Upload
+      # 17. UPLOAD
       # ============================================================
       - name: Upload RMX1827 Kernel
         uses: actions/upload-artifact@v4
