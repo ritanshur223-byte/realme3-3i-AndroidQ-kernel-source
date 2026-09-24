@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel VDSO Bypass Build
+    - name: Fix Missing Vendor Headers and Compile
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -40,16 +40,20 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
+        # Create dummy missing vendor header directory and file to satisfy init/main.c
+        mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
+        touch vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
+
         make clean || true
         make oppo6771_defconfig
 
-        # Disable stack protector options and VDSO to fix final error
+        # Disable stack protector options in .config
         if [ -f ".config" ]; then
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           
-          # Disable VDSO completely to bypass linking crash
+          # Disable VDSO to prevent linking crashes
           sed -i 's/CONFIG_VDSO=y/# CONFIG_VDSO is not set/' .config || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/' .config || true
           echo "# CONFIG_VDSO is not set" >> .config
