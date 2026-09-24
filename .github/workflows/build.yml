@@ -13,11 +13,13 @@ jobs:
     - name: Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: Install Dependencies
+    - name: Install Dependencies (Fast Mode)
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncursesw5-dev libelf-dev liblz4-tool git ccache clang lzop python2 python-is-python2
+        apt-get install -y --no-install-recommends \
+          build-essential bc bison flex libssl-dev libncurses5-dev \
+          libelf-dev liblz4-tool git ccache lzop python2 python-is-python2
 
     - name: Clone GCC Toolchain
       run: |
@@ -28,8 +30,6 @@ jobs:
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
-        
-        # Toolchain PATH properly set kora hoyeche
         export PATH=$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH
         export CROSS_COMPILE=aarch64-linux-android-
         export CROSS_COMPILE_ARM32=arm-linux-androideabi-
