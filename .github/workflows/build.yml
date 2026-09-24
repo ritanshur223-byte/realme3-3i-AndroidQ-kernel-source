@@ -22,13 +22,24 @@ jobs:
           libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 libfdt-dev sed make
         update-ca-certificates
 
-    - name: Clone GCC Toolchain
+    # Cache GCC toolchains so they are never downloaded twice
+    - name: Cache GCC Toolchains
+      uses: actions/cache@v4
+      id: cache-toolchains
+      with:
+        path: |
+          gcc64
+          gcc32
+        key: gcc-toolchain-4.9-realme3i-v1
+
+    - name: Clone GCC Toolchain (Skipped if cached)
+      if: steps.cache-toolchains.outputs.cache-hit != 'true'
       run: |
         git config --global http.sslVerify false
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Fix Missing Vendor Headers and Compile
+    - name: Fast Incremental Kernel Compilation
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -40,7 +51,7 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
-        # Create proper stub header with required functions and macros for oppo_phoenix.h
+        # Create complete stub header with all missing macros for oppo_phoenix.h
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
@@ -48,31 +59,42 @@ jobs:
 
         #define KERNEL_INIT_DONE 1
         #define KERNEL_DO_BASIC_SETUP_DONE 2
+        #define KERNEL_MM_INIT_DONE 3
+        #define KERNEL_LOCAL_IRQ_ENABLE 4
+        #define KERNEL_DELAYACCT_INIT_DONE 5
+        #define KERNEL_DRIVER_INIT_DONE 6
+        #define KERNEL_DO_INITCALLS_DONE 7
 
         static inline void phx_set_boot_stage(int stage) { (void)stage; }
 
         #endif
         EOF
 
-        make clean || true
-        make oppo6771_defconfig
+        # Run clean and defconfig ONLY if .config doesn't exist to preserve previous build progress
+        if [ ! -f ".config" ]; then
+          echo "Running clean build setup..."
+          make clean || true
+          make oppo6771_defconfig
+        else
+          echo "Resuming previous build state (Incremental Build)..."
+        fi
 
         # Disable stack protector options in .config
         if [ -f ".config" ]; then
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
-          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+          grep -q "CONFIG_CC_STACKPROTECTOR_NONE=y" .config || echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           
           # Disable VDSO to prevent linking crashes
           sed -i 's/CONFIG_VDSO=y/# CONFIG_VDSO is not set/' .config || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/' .config || true
-          echo "# CONFIG_VDSO is not set" >> .config
+          grep -q "# CONFIG_VDSO is not set" .config || echo "# CONFIG_VDSO is not set" >> .config
         fi
 
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        # Step 2: Compile kernel with safe parallelism
+        # Step 2: Compile kernel (Will skip already compiled files and resume fast)
         make -j4 \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
