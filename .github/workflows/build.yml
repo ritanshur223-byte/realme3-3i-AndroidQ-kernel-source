@@ -28,7 +28,7 @@ jobs:
         chmod -R +x gcc64 gcc32 2>/dev/null || true
 
     - name: Auto-Fixing Self-Healing Build Loop
-      run: |
+      run: | 
         export ARCH=arm64
         export SUBARCH=arm64
         export PATH=$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH
