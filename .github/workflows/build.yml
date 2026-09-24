@@ -40,9 +40,19 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
-        # Create dummy missing vendor header directory and file to satisfy init/main.c
+        # Create proper stub header with required functions and macros for oppo_phoenix.h
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
-        touch vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
+        cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
+        #ifndef OPPO_PHOENIX_H
+        #define OPPO_PHOENIX_H
+
+        #define KERNEL_INIT_DONE 1
+        #define KERNEL_DO_BASIC_SETUP_DONE 2
+
+        static inline void phx_set_boot_stage(int stage) { (void)stage; }
+
+        #endif
+        EOF
 
         make clean || true
         make oppo6771_defconfig
