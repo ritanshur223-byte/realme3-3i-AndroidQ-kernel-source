@@ -14,7 +14,14 @@ jobs:
     - name: Install Build Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncursesw5-dev libelf-dev liblz4-tool git ccache clang
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncursesw5-dev libelf-dev liblz4-tool git ccache clang 2to3 python3-2to3
+
+    - name: Auto-Heal Legacy Python Scripts
+      run: |
+        echo "Auto-fixing legacy Python 2 scripts to Python 3..."
+        # MediaTek ke DrvGen.py aur baki Python 2 scripts ko auto-fix karega
+        2to3 -w -n ./tools/ ./scripts/ || true
+        find . -type f -name "*.py" -exec sed -i -E 's/print "([^"]*)"/print("\1")/g' {} + || true
 
     - name: Clone GCC Toolchain
       run: |
@@ -28,10 +35,7 @@ jobs:
         export CROSS_COMPILE=$(pwd)/gcc64/bin/aarch64-linux-android-
         export CROSS_COMPILE_ARM32=$(pwd)/gcc32/bin/arm-linux-androideabi-
         
-        # Load exact Realme 3i (MT6771) defconfig
         make O=out oppo6771_defconfig
-        
-        # Start compilation
         make -j$(nproc --all) O=out
 
     - name: Upload Compiled Kernel Image
@@ -42,4 +46,3 @@ jobs:
           out/arch/arm64/boot/Image.gz-dtb
           out/arch/arm64/boot/Image.gz
           out/arch/arm64/boot/Image
-          
