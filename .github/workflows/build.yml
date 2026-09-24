@@ -30,15 +30,15 @@ jobs:
         path: |
           gcc64
           gcc32
-        key: gcc-toolchain-4.9-realme3i-v1
+        key: gcc-toolchain-4.9-aosp-stable-v1
 
-    - name: Clone GCC Toolchain (Skipped if cached)
+    - name: Clone Official AOSP GCC Toolchains (Skipped if cached)
       if: steps.cache-toolchains.outputs.cache-hit != 'true'
       run: |
-        export GIT_TERMINAL_PROMPT=0
-        git config --global http.sslVerify false
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_arm_arm-linux-androideabi-4.9 gcc32
+        mkdir -p gcc64 gcc32
+        echo "Cloning official AOSP GCC 4.9 toolchains directly..."
+        git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
+        git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
 
     - name: Fast Incremental Kernel Compilation
       run: |
