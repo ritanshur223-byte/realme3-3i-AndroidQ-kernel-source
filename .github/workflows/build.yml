@@ -395,7 +395,7 @@ jobs:
             "$(pwd)/drivers/misc/mediatek/dws/mt6771/oppo6771_18601.dws" \
             "$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601" \
             "$(pwd)/out/arch/arm64/boot/dts/oppo6771_18601" \
-            cust_dtsi
+            cust.dtsi
 
           echo
           echo "DRVGEN TEST FINISHED"
@@ -409,7 +409,7 @@ jobs:
             -print
 
           test -f \
-            out/arch/arm64/boot/dts/oppo6771_18601/cust_dtsi
+            out/arch/arm64/boot/dts/oppo6771_18601/cust.dtsi
 
       # ============================================================
       # 14. FULL KERNEL BUILD
