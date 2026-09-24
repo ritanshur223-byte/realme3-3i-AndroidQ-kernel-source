@@ -13,7 +13,7 @@ jobs:
     - name: Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: Install Dependencies
+    - name: Install Dependencies & Tools
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
@@ -22,12 +22,12 @@ jobs:
           libelf-dev liblz4-tool git ccache lzop python2 python-is-python2 sed make
         update-ca-certificates
 
-    - name: Clone GCC Toolchains
+    - name: Clone Official AOSP GCC Toolchains
       run: |
         git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel
+    - name: Fast Incremental Kernel Compilation
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -39,13 +39,19 @@ jobs:
         export KBUILD_BUILD_USER=ritansh
         export KBUILD_BUILD_HOST=github-actions
 
+        # Fix python interpreter path for old kernel scripts
         ln -sf /usr/bin/python2 /usr/bin/python
 
-        # Fresh config setup
-        make clean || true
-        make oppo6771_defconfig
+        # Run clean and defconfig FIRST
+        if [ ! -f ".config" ]; then
+          echo "Running clean build setup..."
+          make clean || true
+          make oppo6771_defconfig
+        else
+          echo "Resuming previous build state..."
+        fi
 
-        # 1. Create missing header stubs
+        # CREATE STUB HEADERS FOR MISSING FILES
         mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core
 
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
@@ -72,20 +78,12 @@ jobs:
         #endif
         EOF
 
-        # 2. EXACT FIX FOR LINE 2700 (drivers/misc/mediatek/see/ordasp/rrdump_panic_mtt.c)
-        mkdir -p drivers/misc/mediatek/see/ordasp
-        mkdir -p drivers/misc/mediatek/aee/rrdump
-        
-        touch drivers/misc/mediatek/see/ordasp/rrdump_private.h
-        touch drivers/misc/mediatek/aee/rrdump/rrdump_private.h
-
-        find drivers/misc/mediatek/ -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/#include\s*["<]rrdump_private.h[">]/\/\/#include "rrdump_private.h"/g' {} +
-
-        # 3. OPPO Phoenix stub
+        # Create oppo_phoenix.h stub
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
         #define OPPO_PHOENIX_H
+
         #define KERNEL_INIT_DONE 1
         #define KERNEL_DO_BASIC_SETUP_DONE 2
         #define KERNEL_MM_INIT_DONE 3
@@ -93,34 +91,61 @@ jobs:
         #define KERNEL_DELAYACCT_INIT_DONE 5
         #define KERNEL_DRIVER_INIT_DONE 6
         #define KERNEL_DO_INITCALLS_DONE 7
+
         #define ERROR_KERNEL_PANIC 10
         #define ERROR_HWT 11
+
         static inline void phx_set_boot_stage(int stage) { (void)stage; }
         static inline int phx_phoenix_boot_completed(void) { return 1; }
         static inline void phx_set_boot_error(int error) { (void)error; }
+
         #endif
         EOF
 
-        # 4. Remove broken oppocfs module
+        # Completely remove broken oppocfs module
         if [ -d "kernel/oppocfs" ]; then
           rm -rf kernel/oppocfs
+          echo "Removed kernel/oppocfs successfully."
         fi
         if [ -f "kernel/Makefile" ]; then
           sed -i '/oppocfs/d' kernel/Makefile || true
         fi
 
-        # Define include paths variable
-        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8 -I$(pwd)/drivers/misc/mediatek/see/ordasp -I$(pwd)/drivers/misc/mediatek/aee/rrdump"
+        if [ -f "fs/sdcardfs/main.c" ]; then
+          sed -i 's/pr_info("Registering sdcardfs " SDCARDFS_VERSION/pr_info("Registering sdcardfs v2.0"/g' fs/sdcardfs/main.c || true
+        fi
 
-        # Build scripts first
+        # Disable stack protector options in .config
+        if [ -f ".config" ]; then
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' .config
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_AUTO=y/# CONFIG_CC_STACKPROTECTOR_AUTO is not set/' .config
+          grep -q "CONFIG_CC_STACKPROTECTOR_NONE=y" .config || echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+          
+          # Disable VDSO to prevent linking crashes
+          sed -i 's/CONFIG_VDSO=y/# CONFIG_VDSO is not set/' .config || true
+          sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/' .config || true
+          grep -q "# CONFIG_VDSO is not set" .config || echo "# CONFIG_VDSO is not set" >> .config
+        fi
+
+        # Define include paths variable
+        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8"
+
+        # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Compile kernel
+        # Step 2: Compile kernel
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
           KCFLAGS="-w -fno-stack-protector $INCLUDES" \
-          EXTRA_CFLAGS="-w $INCLUDES"
+          EXTRA_CFLAGS="-w $INCLUDES" || {
+            echo "Parallel build failed! Retrying with single thread..."
+            make -j1 \
+              HOSTCFLAGS="-w" \
+              HOSTCXXFLAGS="-w" \
+              KCFLAGS="-w -fno-stack-protector $INCLUDES" \
+              EXTRA_CFLAGS="-w $INCLUDES"
+          }
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
