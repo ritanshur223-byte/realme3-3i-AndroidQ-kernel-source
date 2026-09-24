@@ -64,42 +64,39 @@ jobs:
           echo "Resuming previous build state (Incremental Build)..."
         fi
 
-        # CREATE ALL STUB HEADERS FOR MISSING FILES
-        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core
+        # CREATE ALL STUB HEADERS EXACTLY WHERE COMPILER WANTS THEM
+        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core drivers/misc/mediatek/aee/rrdump
 
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
         #ifndef HELIO_DVFORC_H
         #define HELIO_DVFORC_H
-        // Stub header for helio-dvforc
         #endif
         EOF
 
         cat << 'EOF' > drivers/extcon/extcon_usb.h
         #ifndef EXTCON_USB_H
         #define EXTCON_USB_H
-        // Stub header for extcon_usb
         #endif
         EOF
 
         cat << 'EOF' > include/soc/qcom/smem.h
         #ifndef __SOC_QCOM_SMEM_H
         #define __SOC_QCOM_SMEM_H
-        // Global stub header for Qualcomm SMEM
         #endif
         EOF
 
         cat << 'EOF' > drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core/firmware.h
         #ifndef CORE_FIRMWARE_H
         #define CORE_FIRMWARE_H
-        // Stub header for touchscreen core firmware
         #endif
         EOF
 
-        # PATCH SOURCE FILE DIRECTLY TO AVOID MISSING HEADER ERROR
-        if [ -f "drivers/misc/mediatek/aee/rrdump/rrdump_panic_mtt.c" ]; then
-          sed -i 's/#include "rrdump_private.h"/\/\/#include "rrdump_private.h"/g' drivers/misc/mediatek/aee/rrdump/rrdump_panic_mtt.c
-          echo "Patched rrdump_panic_mtt.c successfully."
-        fi
+        # CREATE rrdump_private.h DIRECTLY INSIDE ITS FOLDER
+        cat << 'EOF' > drivers/misc/mediatek/aee/rrdump/rrdump_private.h
+        #ifndef RRDUMP_PRIVATE_H
+        #define RRDUMP_PRIVATE_H
+        #endif
+        EOF
 
         # Create oppo_phoenix.h stub safely after clean
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
@@ -151,7 +148,7 @@ jobs:
         fi
 
         # Define all include paths variable
-        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8"
+        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8 -I$(pwd)/drivers/misc/mediatek/aee/rrdump"
 
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
