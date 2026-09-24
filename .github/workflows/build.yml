@@ -91,13 +91,14 @@ jobs:
         #endif
         EOF
 
-        # FOOLPROOF FIND & PATCH FOR RRDUMP ERROR
-        echo "Searching and patching rrdump_panic_mtt.c automatically..."
-        find . -type f -name "rrdump_panic_mtt.c" | while read file; do
-          sed -i 's/#include\s*["<]rrdump_private.h[">]/\/\/#include "rrdump_private.h"/g' "$file"
-          touch "$(dirname "$file")/rrdump_private.h"
-          echo "Successfully patched: $file"
-        done
+        # Completely remove broken rrdump module so it never throws errors again
+        if [ -d "drivers/misc/mediatek/see/rrdump" ]; then
+          rm -rf drivers/misc/mediatek/see/rrdump
+          echo "Removed drivers/misc/mediatek/see/rrdump successfully."
+        fi
+        if [ -f "drivers/misc/mediatek/see/Makefile" ]; then
+          sed -i '/rrdump/d' drivers/misc/mediatek/see/Makefile || true
+        fi
 
         # Create oppo_phoenix.h stub safely
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
@@ -154,7 +155,7 @@ jobs:
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
 
-        # Step 2: Compile kernel with custom include paths
+        # Step 2: Compile kernel with custom missing file patches & include paths
         make -j4 \
           HOSTCFLAGS="-w" \
           HOSTCXXFLAGS="-w" \
