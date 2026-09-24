@@ -54,7 +54,16 @@ jobs:
         # Fix python interpreter path for old kernel scripts
         ln -sf /usr/bin/python2 /usr/bin/python
 
-        # Create complete stub header with all missing panic/boot macros for oppo_phoenix.h
+        # Run clean and defconfig FIRST
+        if [ ! -f ".config" ]; then
+          echo "Running clean build setup..."
+          make clean || true
+          make oppo6771_defconfig
+        else
+          echo "Resuming previous build state (Incremental Build)..."
+        fi
+
+        # NOW create stubs AFTER clean/defconfig so they stay safe
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
         cat << 'EOF' > vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h
         #ifndef OPPO_PHOENIX_H
@@ -78,25 +87,14 @@ jobs:
         #endif
         EOF
 
-        # Create missing helio-dvforc.h stub to fix devfreq compilation error
-        if [ ! -f "drivers/devfreq/helio-dvforc.h" ]; then
-          cat << 'EOF' > drivers/devfreq/helio-dvforc.h
+        # Create missing helio-dvforc.h stub safely after clean
+        mkdir -p drivers/devfreq
+        cat << 'EOF' > drivers/devfreq/helio-dvforc.h
         #ifndef HELIO_DVFORC_H
         #define HELIO_DVFORC_H
         // Stub header for helio-dvforc
         #endif
         EOF
-          echo "Created missing drivers/devfreq/helio-dvforc.h successfully."
-        fi
-
-        # Run clean and defconfig FIRST
-        if [ ! -f ".config" ]; then
-          echo "Running clean build setup..."
-          make clean || true
-          make oppo6771_defconfig
-        else
-          echo "Resuming previous build state (Incremental Build)..."
-        fi
 
         # Completely remove broken oppocfs module so it never throws errors again
         if [ -d "kernel/oppocfs" ]; then
