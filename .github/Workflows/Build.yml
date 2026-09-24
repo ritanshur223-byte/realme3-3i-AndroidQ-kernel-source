@@ -11,19 +11,29 @@ jobs:
     - name: Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: Install Build Dependencies
+    - name: Auto-Download Python 2.7 Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '2.7'
+
+    - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncursesw5-dev libelf-dev liblz4-tool git ccache clang 2to3 python3-2to3
+        sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev libncursesw5-dev libelf-dev liblz4-tool git ccache clang lzop
 
-    - name: Auto-Heal Legacy Python Scripts
+    - name: Auto-Heal & Link Python Environment
       run: |
-        echo "Auto-fixing legacy Python 2 scripts to Python 3..."
-        # MediaTek ke DrvGen.py aur baki Python 2 scripts ko auto-fix karega
-        2to3 -w -n ./tools/ ./scripts/ || true
-        find . -type f -name "*.py" -exec sed -i -E 's/print "([^"]*)"/print("\1")/g' {} + || true
+        # System python ko Python 2.7 par link karna
+        PYTHON_PATH=$(which python)
+        sudo ln -sf $PYTHON_PATH /usr/bin/python || true
+        sudo ln -sf $PYTHON_PATH /usr/bin/python2 || true
+        
+        # DrvGen aur MediaTek scripts ko auto-fix karna
+        echo "Auto-fixing legacy scripts..."
+        find . -type f -name "*.py" -exec sed -i -E 's/print[[:space:]]+"(.*)"/print("\1")/g' {} + || true
+        find . -type f -name "*.py" -exec sed -i -E "s/print[[:space:]]+'(.*)'/print('\1')/g" {} + || true
 
-    - name: Clone GCC Toolchain
+    - name: Auto-Clone GCC Toolchains
       run: |
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
