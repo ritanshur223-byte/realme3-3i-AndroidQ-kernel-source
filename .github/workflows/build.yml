@@ -65,7 +65,7 @@ jobs:
         fi
 
         # CREATE ALL STUB HEADERS FOR MISSING FILES
-        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core drivers/misc/mediatek/aee/rrdump
+        mkdir -p drivers/devfreq drivers/extcon include/soc/qcom drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8/core
 
         cat << 'EOF' > drivers/devfreq/helio-dvforc.h
         #ifndef HELIO_DVFORC_H
@@ -95,12 +95,11 @@ jobs:
         #endif
         EOF
 
-        cat << 'EOF' > drivers/misc/mediatek/aee/rrdump/rrdump_private.h
-        #ifndef RRDUMP_PRIVATE_H
-        #define RRDUMP_PRIVATE_H
-        // Stub header for rrdump private
-        #endif
-        EOF
+        # PATCH SOURCE FILE DIRECTLY TO AVOID MISSING HEADER ERROR
+        if [ -f "drivers/misc/mediatek/aee/rrdump/rrdump_panic_mtt.c" ]; then
+          sed -i 's/#include "rrdump_private.h"/\/\/#include "rrdump_private.h"/g' drivers/misc/mediatek/aee/rrdump/rrdump_panic_mtt.c
+          echo "Patched rrdump_panic_mtt.c successfully."
+        fi
 
         # Create oppo_phoenix.h stub safely after clean
         mkdir -p vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
@@ -152,7 +151,7 @@ jobs:
         fi
 
         # Define all include paths variable
-        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8 -I$(pwd)/drivers/misc/mediatek/aee/rrdump"
+        INCLUDES="-I$(pwd)/drivers/devfreq -I$(pwd)/drivers/extcon -I$(pwd)/drivers/input/touchscreen/mediatek/hq_green/gpio_touch_driver-v1.0.3.8"
 
         # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
