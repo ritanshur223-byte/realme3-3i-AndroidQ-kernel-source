@@ -25,6 +25,7 @@ jobs:
         rm -rf gcc64 gcc32
         git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
+        chmod -R +x gcc64/bin gcc32/bin
 
     - name: Auto-Fixing Self-Healing Build Loop
       run: |
@@ -42,6 +43,10 @@ jobs:
         # Initial Clean Setup
         make clean || true
         make oppo6771_defconfig
+
+        # FIX DTC MULTIPLE DEFINITION ISSUE (GCC 11+ Compatibility)
+        sed -i 's/YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-lexer.lex.c_shipped 2>/dev/null || true
+        sed -i 's/YYLTYPE yylloc;/extern YYLTYPE yylloc;/g' scripts/dtc/dtc-parser.tab.c_shipped 2>/dev/null || true
 
         # Automatic Header Discovery
         AUTO_INCLUDES=$(find $(pwd)/drivers $(pwd)/include $(pwd)/vendor $(pwd)/kernel $(pwd)/arch -type f -name "*.h" 2>/dev/null | xargs -n1 dirname | sort -u | sed 's/^/-I/' | tr '\n' ' ')
@@ -63,7 +68,7 @@ jobs:
         mkdir -p include/autostubs
 
         # Prepare build scripts
-        make -j1 scripts prepare HOSTCFLAGS="-w" HOSTCXXFLAGS="-w"
+        make -j1 scripts prepare HOSTCFLAGS="-w -fcommon" HOSTCXXFLAGS="-w -fcommon"
 
         # --- AUTO-FIX LOOP SCRIPT ---
         MAX_RETRIES=15
@@ -76,10 +81,10 @@ jobs:
 
           set +e
           make -j4 \
-            HOSTCFLAGS="-w" \
-            HOSTCXXFLAGS="-w" \
-            KCFLAGS="-w -fno-stack-protector -I$(pwd)/include/autostubs $AUTO_INCLUDES" \
-            EXTRA_CFLAGS="-w -I$(pwd)/include/autostubs $AUTO_INCLUDES" 2>&1 | tee build.log
+            HOSTCFLAGS="-w -fcommon" \
+            HOSTCXXFLAGS="-w -fcommon" \
+            KCFLAGS="-w -fcommon -fno-stack-protector -I$(pwd)/include/autostubs $AUTO_INCLUDES" \
+            EXTRA_CFLAGS="-w -fcommon -I$(pwd)/include/autostubs $AUTO_INCLUDES" 2>&1 | tee build.log
           
           BUILD_STATUS=${PIPESTATUS[0]}
           set -e
@@ -114,10 +119,10 @@ jobs:
           if [ $FIX_APPLIED -eq 0 ]; then
             echo "[AUTO-FIX] Retrying build with single thread (-j1)..."
             make -j1 \
-              HOSTCFLAGS="-w" \
-              HOSTCXXFLAGS="-w" \
-              KCFLAGS="-w -fno-stack-protector -I$(pwd)/include/autostubs $AUTO_INCLUDES" \
-              EXTRA_CFLAGS="-w -I$(pwd)/include/autostubs $AUTO_INCLUDES"
+              HOSTCFLAGS="-w -fcommon" \
+              HOSTCXXFLAGS="-w -fcommon" \
+              KCFLAGS="-w -fcommon -fno-stack-protector -I$(pwd)/include/autostubs $AUTO_INCLUDES" \
+              EXTRA_CFLAGS="-w -fcommon -I$(pwd)/include/autostubs $AUTO_INCLUDES"
             exit $?
           fi
 
