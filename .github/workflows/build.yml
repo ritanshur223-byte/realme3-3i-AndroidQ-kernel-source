@@ -75,6 +75,11 @@ jobs:
         #endif
         EOF
 
+        # Fix sdcardfs string concatenation error automatically
+        if [ -f "fs/sdcardfs/main.c" ]; then
+          sed -i 's/pr_info("Registering sdcardfs " SDCARDFS_VERSION/pr_info("Registering sdcardfs v2.0"/g' fs/sdcardfs/main.c || true
+        fi
+
         # Run clean and defconfig ONLY if .config doesn't exist to preserve previous build progress
         if [ ! -f ".config" ]; then
           echo "Running clean build setup..."
