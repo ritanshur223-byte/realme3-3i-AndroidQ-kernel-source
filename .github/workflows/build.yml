@@ -28,7 +28,7 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
         git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
-    - name: Compile Kernel Clean Build
+    - name: Compile Kernel Final Fix
       run: |
         export ARCH=arm64
         export SUBARCH=arm64
@@ -50,14 +50,14 @@ jobs:
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
         fi
 
-        # Step 1: Build scripts using host compiler flags (-fcommon goes ONLY here)
+        # Step 1: Build scripts safely
         make -j1 scripts prepare HOSTCFLAGS="-fcommon -Wno-error" HOSTCXXFLAGS="-fcommon -Wno-error"
 
-        # Step 2: Compile main kernel using clean target flags (NO -fcommon passed to gcc 4.9)
+        # Step 2: Compile main kernel with clean KCFLAGS (removed problematic flags)
         make -j$(nproc --all) \
           HOSTCFLAGS="-fcommon -Wno-error" \
           HOSTCXXFLAGS="-fcommon -Wno-error" \
-          KCFLAGS="-fno-pic -fno-async-unwind-tables -Wno-error -fno-stack-protector"
+          KCFLAGS="-Wno-error -fno-stack-protector"
 
     - name: Upload Compiled Kernel Image
       uses: actions/upload-artifact@v4
@@ -67,4 +67,3 @@ jobs:
           arch/arm64/boot/Image.gz-dtb
           arch/arm64/boot/Image.gz
           arch/arm64/boot/Image
-          
