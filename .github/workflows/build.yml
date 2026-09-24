@@ -22,7 +22,6 @@ jobs:
             libelf-dev \
             libncurses5-dev \
             libssl-dev \
-            python3 \
             rsync \
             unzip \
             zip
@@ -33,7 +32,7 @@ jobs:
             https://github.com/realme-kernel-opensource/realme3-3i-AndroidQ-kernel-source.git \
             kernel
 
-      - name: Setup AArch64 GCC
+      - name: Setup AArch64 GCC 4.9
         run: |
           git clone --depth=1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
@@ -41,10 +40,18 @@ jobs:
 
           echo "$GITHUB_WORKSPACE/gcc/bin" >> "$GITHUB_PATH"
 
-      - name: Check compiler
+      - name: Check GCC
         run: |
           which aarch64-linux-android-gcc
           aarch64-linux-android-gcc --version
+
+      - name: Setup Python 2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python2
+          sudo ln -sf /usr/bin/python2 /usr/local/bin/python
+
+          python --version
 
       - name: Configure kernel
         working-directory: kernel
@@ -64,6 +71,8 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=aarch64-linux-android-
+
+          python --version
 
           make -j"$(nproc)" \
             O=out \
@@ -101,7 +110,9 @@ jobs:
             -exec cp {} kernel-output/ \; \
             || true
 
-          cp kernel/out/.config kernel-output/kernel.config
+          if [ -f kernel/out/.config ]; then
+            cp kernel/out/.config kernel-output/kernel.config
+          fi
 
           echo "===== FINAL FILES ====="
           ls -lah kernel-output
