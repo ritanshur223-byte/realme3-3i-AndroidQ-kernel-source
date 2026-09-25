@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Linker & Exclude Layering)
+name: Build Realme 3i Custom Kernel (Fix Headers & Phoenix Conflict)
 
 on:
   workflow_dispatch:
@@ -35,12 +35,38 @@ jobs:
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          # Remove layering_rule from Makefiles directly
-          find drivers/misc/mediatek/video/ -name "Makefile" | while read -r mk; do
-            sed -i '/layering_rule/d' "$mk" || true
+          echo "Fixing layering rule code & headers..."
+          # Fix layering rule C files with simple safe stubs
+          find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
+            cat << 'EOF' > "$file"
+          #include <linux/module.h>
+          #include <linux/kernel.h>
+
+          int layering_rule_init(void) { return 0; }
+          void layering_rule_exit(void) {}
+          int layering_rule_start(void) { return 0; }
+          EOF
           done
 
-          echo "Creating universal stub headers..."
+          # Create missing layering_rule headers
+          mkdir -p drivers/misc/mediatek/video/mt6771/videox/
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule_base.h
+          #ifndef __LAYERING_RULE_BASE_H__
+          #define __LAYERING_RULE_BASE_H__
+          #endif
+          EOF
+
+          cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule.h
+          #ifndef __LAYERING_RULE_H__
+          #define __LAYERING_RULE_H__
+          #endif
+          EOF
+
+          # Copy headers to include directory just in case
+          mkdir -p include/video/
+          cp drivers/misc/mediatek/video/mt6771/videox/layering_rule*.h include/ 2>/dev/null || true
+
+          echo "Creating safe minimal headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
@@ -84,47 +110,23 @@ jobs:
           #endif
           EOF
 
+          # Clean & non-conflicting phoenix header
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
-          static inline void phx_set_boot_stage(const char *stage) { (void)stage; }
-          static inline void phx_set_boot_error(const char *error) { (void)error; }
+          static inline void phx_set_boot_stage(int stage) { (void)stage; }
+          static inline void phx_set_boot_error(int error) { (void)error; }
           static inline void phx_set_boot_info(const char *info) { (void)info; }
-          #define KERNEL_MM_INIT_DONE 0
-          #define KERNEL_LOCAL_IRQ_ENABLE 1
-          #define KERNEL_DELAYACCT_INIT_DONE 2
-          #define KERNEL_DRIVER_INIT_DONE 3
-          #define KERNEL_DO_INITCALLS_DONE 4
-          #define KERNEL_INIT_DONE 5
-          #define KERNEL_DO_BASIC_SETUP_DONE 6
-          #define ERROR_KERNEL_PANIC 0
-          #define ERROR_INT 0
-          #define ERROR_AEE 0
-          #define ERROR_KE 0
-          #define ERROR_NE 0
-          #define ERROR_JE 0
-          #ifndef ANDROID_LOG_INFO
-          #define ANDROID_LOG_UNKNOWN 0
-          #define ANDROID_LOG_DEFAULT 1
-          #define ANDROID_LOG_VERBOSE 2
-          #define ANDROID_LOG_DEBUG 3
-          #define ANDROID_LOG_INFO 4
-          #define ANDROID_LOG_WARN 5
-          #define ANDROID_LOG_ERROR 6
-          #define ANDROID_LOG_FATAL 7
-          #define ANDROID_LOG_SILENT 8
-          #endif
           #endif
           EOF
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Python script to fix panic.c
+          # Comment out broken phx calls in panic.c
           python3 -c "
           try:
               with open('kernel/panic.c', 'r') as f:
                   content = f.read()
-              content = content.replace('phx_set_boot_error(ERROR_INT);', '// phx_set_boot_error(ERROR_INT);')
               content = content.replace('phx_set_boot_error', '// phx_set_boot_error')
               with open('kernel/panic.c', 'w') as f:
                   f.write(content)
@@ -153,7 +155,7 @@ jobs:
           PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${PHOENIX_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -I$(pwd)/drivers/misc/mediatek/video/mt6771/videox -include ${PHOENIX_HEADER}"
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log; then
             echo "=============================================="
