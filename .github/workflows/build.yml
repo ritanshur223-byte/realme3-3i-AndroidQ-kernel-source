@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Init Macros)
+name: Build Realme 3i Custom Kernel (Fix Android Log & Charger Drivers)
 
 on:
   workflow_dispatch:
@@ -63,7 +63,7 @@ jobs:
           mkdir -p include/video/
           cp drivers/misc/mediatek/video/mt6771/videox/layering_rule*.h include/ 2>/dev/null || true
 
-          echo "Creating safe minimal headers..."
+          echo "Creating safe complete headers..."
           mkdir -p include/oppo include/soc/qcom include/linux include/soc/oppo vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/
           mkdir -p drivers/misc/mediatek/smi drivers/misc/mediatek/ext_disp/mt6771
 
@@ -107,15 +107,18 @@ jobs:
           #endif
           EOF
 
-          # Complete & conflict-free phoenix header
+          # Fully robust oppo_phoenix.h
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
+
+          #include <linux/types.h>
 
           static inline void phx_set_boot_stage(int stage) { (void)stage; }
           static inline void phx_set_boot_error(int error) { (void)error; }
           static inline void phx_set_boot_info(const char *info) { (void)info; }
 
+          #ifndef KERNEL_MM_INIT_DONE
           #define KERNEL_MM_INIT_DONE 0
           #define KERNEL_LOCAL_IRQ_ENABLE 1
           #define KERNEL_DELAYACCT_INIT_DONE 2
@@ -123,6 +126,19 @@ jobs:
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
           #define KERNEL_DO_BASIC_SETUP_DONE 6
+          #endif
+
+          #ifndef ANDROID_LOG_INFO
+          #define ANDROID_LOG_UNKNOWN 0
+          #define ANDROID_LOG_DEFAULT 1
+          #define ANDROID_LOG_VERBOSE 2
+          #define ANDROID_LOG_DEBUG 3
+          #define ANDROID_LOG_INFO 4
+          #define ANDROID_LOG_WARN 5
+          #define ANDROID_LOG_ERROR 6
+          #define ANDROID_LOG_FATAL 7
+          #define ANDROID_LOG_SILENT 8
+          #endif
 
           #endif
           EOF
