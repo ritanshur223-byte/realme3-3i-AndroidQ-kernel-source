@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Android Log & Charger Drivers)
+name: Build Realme 3i Custom Kernel (Fix Stack Protector)
 
 on:
   workflow_dispatch:
@@ -107,7 +107,6 @@ jobs:
           #endif
           EOF
 
-          # Fully robust oppo_phoenix.h
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
@@ -145,7 +144,6 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Comment out broken phx calls in panic.c
           python3 -c "
           try:
               with open('kernel/panic.c', 'r') as f:
@@ -174,7 +172,13 @@ jobs:
           fi
           echo "Selected Defconfig: $DEFCONFIG"
           make O=out $DEFCONFIG
-          
+
+          # Disable stack protector that GCC 4.9 does not support
+          echo "Disabling unsupported Stack Protector flags..."
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/' out/.config || true
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/CONFIG_CC_STACKPROTECTOR_NONE=y/' out/.config || true
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> out/.config
+
           PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
