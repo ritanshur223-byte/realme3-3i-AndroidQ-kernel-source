@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Layering Base)
+name: Build Realme 3i Custom Kernel (Fix Linker & Exclude Layering)
 
 on:
   workflow_dispatch:
@@ -28,23 +28,16 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Setup Headers and Patch Layering Drivers
+      - name: Setup Headers and Patch Drivers
         run: |
-          echo "Removing problematic fingerprint drivers..."
+          echo "Removing problematic drivers from Makefiles..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Replacing broken layering_rule.c and layering_rule_base files with clean stubs..."
-          find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
-            cat << 'EOF' > "$file"
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-
-          int layering_rule_init(void) { return 0; }
-          void layering_rule_exit(void) {}
-          int layering_rule_start(void) { return 0; }
-          EOF
+          # Remove layering_rule from Makefiles directly
+          find drivers/misc/mediatek/video/ -name "Makefile" | while read -r mk; do
+            sed -i '/layering_rule/d' "$mk" || true
           done
 
           echo "Creating universal stub headers..."
@@ -164,9 +157,9 @@ jobs:
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log; then
             echo "=============================================="
-            echo "BUILD FAILED! Printing last 150 lines of log:"
+            echo "BUILD FAILED! Searching for actual error lines:"
             echo "=============================================="
-            tail -n 150 build.log
+            grep -i -E "error:" build.log | tail -n 40 || tail -n 150 build.log
             exit 1
           fi
 
