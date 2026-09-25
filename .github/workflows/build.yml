@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Headers & Phoenix Conflict)
+name: Build Realme 3i Custom Kernel (Fix Init Macros)
 
 on:
   workflow_dispatch:
@@ -36,7 +36,6 @@ jobs:
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
           echo "Fixing layering rule code & headers..."
-          # Fix layering rule C files with simple safe stubs
           find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
             cat << 'EOF' > "$file"
           #include <linux/module.h>
@@ -48,7 +47,6 @@ jobs:
           EOF
           done
 
-          # Create missing layering_rule headers
           mkdir -p drivers/misc/mediatek/video/mt6771/videox/
           cat << 'EOF' > drivers/misc/mediatek/video/mt6771/videox/layering_rule_base.h
           #ifndef __LAYERING_RULE_BASE_H__
@@ -62,7 +60,6 @@ jobs:
           #endif
           EOF
 
-          # Copy headers to include directory just in case
           mkdir -p include/video/
           cp drivers/misc/mediatek/video/mt6771/videox/layering_rule*.h include/ 2>/dev/null || true
 
@@ -110,13 +107,23 @@ jobs:
           #endif
           EOF
 
-          # Clean & non-conflicting phoenix header
+          # Complete & conflict-free phoenix header
           cat << 'EOF' > include/linux/oppo_phoenix.h
           #ifndef _OPPO_PHOENIX_H
           #define _OPPO_PHOENIX_H
+
           static inline void phx_set_boot_stage(int stage) { (void)stage; }
           static inline void phx_set_boot_error(int error) { (void)error; }
           static inline void phx_set_boot_info(const char *info) { (void)info; }
+
+          #define KERNEL_MM_INIT_DONE 0
+          #define KERNEL_LOCAL_IRQ_ENABLE 1
+          #define KERNEL_DELAYACCT_INIT_DONE 2
+          #define KERNEL_DRIVER_INIT_DONE 3
+          #define KERNEL_DO_INITCALLS_DONE 4
+          #define KERNEL_INIT_DONE 5
+          #define KERNEL_DO_BASIC_SETUP_DONE 6
+
           #endif
           EOF
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
