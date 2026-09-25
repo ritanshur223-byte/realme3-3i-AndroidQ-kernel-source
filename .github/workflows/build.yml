@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Final Rechecked Fix)
+name: Build Realme 3i Custom Kernel (Global Force-Inject Fix)
 
 on:
   workflow_dispatch:
@@ -28,44 +28,40 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Nuke Buggy C Files and Fix Headers & Makefiles
+      - name: Nuke Conflicting Headers and Create Global Master Header
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Setting up correct enums and variadic macros for layering rules..."
-          find drivers/misc/mediatek/ -name "layering_rule.h" -exec rm -f {} \; || true
+          echo "Completely deleting all existing layering_rule files from the entire source..."
+          find . -name "*layering_rule*.h" -delete || true
           rm -rf drivers/misc/mediatek/video/common/layering_rule_base
           rm -rf drivers/misc/mediatek/video/common/color20
 
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/common/color20
 
-          # Corrected header using enums and variadic macros to prevent any syntax/argument mismatch
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
+          # Create the ultimate master header containing all required definitions and macros
+          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h
+          #ifndef __LAYERING_RULE_H__
+          #define __LAYERING_RULE_H__
 
-          enum {
-              HRT_PATH_OSZ_NONE = 0,
-              HRT_PATH_PIPE_SINGLE,
-              HRT_PATH_DISP_DUAL_EXT,
-              HRT_PATH_OSZ_PARTIAL,
-              HRT_PATH_DISP_SINGLE,
-              HRT_PATH_UNKNOWN,
-              HRT_PATH_NUM
-          };
+          #define HRT_PATH_OSZ_NONE 0
+          #define HRT_PATH_PIPE_SINGLE 1
+          #define HRT_PATH_DISP_DUAL_EXT 2
+          #define HRT_PATH_OSZ_PARTIAL 3
+          #define HRT_PATH_DISP_SINGLE 4
+          #define HRT_PATH_UNKNOWN 5
+          #define HRT_PATH_NUM 6
 
-          enum {
-              HRT_LEVEL_0 = 0,
-              HRT_LEVEL_1,
-              HRT_LEVEL_2,
-              HRT_LEVEL_3,
-              HRT_LEVEL_DEFAULT,
-              HRT_LEVEL_NUM
-          };
+          #define HRT_LEVEL_0 0
+          #define HRT_LEVEL_1 1
+          #define HRT_LEVEL_2 2
+          #define HRT_LEVEL_3 3
+          #define HRT_LEVEL_DEFAULT 4
+          #define HRT_LEVEL_NUM 5
 
           #define MAKE_UNIFIED_HRT_PATH_FMT(...) (0)
 
@@ -74,9 +70,6 @@ jobs:
           #endif
           EOF
 
-          cp drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h || true
-          find drivers/misc/mediatek/video/ -type d -exec cp drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h {} \; || true
-
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
           #include <linux/module.h>
           #include <linux/kernel.h>
@@ -84,7 +77,6 @@ jobs:
           EXPORT_SYMBOL(layering_rule_calculation);
           EOF
 
-          # FIXED: Only compiling layering_stub.o to prevent 'No rule to make target' error
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
           obj-y := layering_stub.o
           EOF
@@ -212,10 +204,12 @@ jobs:
           make O=out $DEFCONFIG
           
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
+          LAYERING_HEADER="$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
           LAYERING_INC="-I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base"
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo ${LAYERING_INC} -include ${STUB_HEADER}"
+          # FORCE INJECT BOTH STUB AND LAYERING HEADER GLOBALLY INTO EVERY C FILE VIA KCFLAGS
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo ${LAYERING_INC} -include ${STUB_HEADER} -include ${LAYERING_HEADER}"
           
           make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
 
