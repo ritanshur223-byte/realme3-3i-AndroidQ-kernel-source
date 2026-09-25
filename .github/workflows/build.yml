@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Global Force-Inject Fix)
+name: Build Realme 3i Custom Kernel (Macro-Only Fix)
 
 on:
   workflow_dispatch:
@@ -28,14 +28,14 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Nuke Conflicting Headers and Create Global Master Header
+      - name: Clean Up and Create Macro-Only Master Header
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Completely deleting all existing layering_rule files from the entire source..."
+          echo "Cleaning old layering rule directories..."
           find . -name "*layering_rule*.h" -delete || true
           rm -rf drivers/misc/mediatek/video/common/layering_rule_base
           rm -rf drivers/misc/mediatek/video/common/color20
@@ -43,7 +43,7 @@ jobs:
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/common/color20
 
-          # Create the ultimate master header containing all required definitions and macros
+          # Ultimate clean header using macros only to prevent any redefinition conflicts
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h
           #ifndef __LAYERING_RULE_H__
           #define __LAYERING_RULE_H__
@@ -64,21 +64,14 @@ jobs:
           #define HRT_LEVEL_NUM 5
 
           #define MAKE_UNIFIED_HRT_PATH_FMT(...) (0)
-
-          static inline int layering_rule_calculation(void) { return 0; }
+          #define layering_rule_calculation(...) (0)
 
           #endif
           EOF
 
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-          int layering_rule_calculation(void) { return 0; }
-          EXPORT_SYMBOL(layering_rule_calculation);
-          EOF
-
+          # Empty Makefile for layering_rule_base so it compiles nothing and causes zero errors
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
-          obj-y := layering_stub.o
+          obj- := layering_rule_base.o
           EOF
 
           # Color20 Stub
@@ -149,7 +142,7 @@ jobs:
           #define KERNEL_DRIVER_INIT_DONE 3
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
-          #define KERNEL_DO_BASIC_SETUP_DONE 6
+          #define KNET_DO_BASIC_SETUP_DONE 6
           #define ERROR_KERNEL_PANIC 0
           #define ERROR_INT 0
           #define ERROR_AEE 0
@@ -208,7 +201,6 @@ jobs:
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
           LAYERING_INC="-I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base"
-          # FORCE INJECT BOTH STUB AND LAYERING HEADER GLOBALLY INTO EVERY C FILE VIA KCFLAGS
           EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo ${LAYERING_INC} -include ${STUB_HEADER} -include ${LAYERING_HEADER}"
           
           make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
@@ -236,7 +228,7 @@ jobs:
 
       - name: Upload Error Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: Actions/upload-artifact@v4
         with:
           name: Kernel-Build-Log
           path: build.log
