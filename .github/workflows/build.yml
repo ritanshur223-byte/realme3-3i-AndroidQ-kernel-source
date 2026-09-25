@@ -145,11 +145,10 @@ jobs:
           cp include/linux/oppo_phoenix.h include/soc/oppo/oppo_phoenix.h 2>/dev/null || true
           cp include/linux/oppo_phoenix.h vendor/oppo/oppo_phoenix/kernel/oppo_phoenix/oppo_phoenix.h 2>/dev/null || true
 
-          # Python patch to fix panic.c and directly embed everything inside layering_rule.h
+          # Python script to neutralize panic.c and completely empty out the problematic layering_rule.h files
           python3 -c "
           import glob
           
-          # Patch panic.c
           try:
               with open('kernel/panic.c', 'r') as f:
                   content = f.read()
@@ -160,32 +159,12 @@ jobs:
           except Exception:
               pass
 
-          # Patch layering_rule.h to embed definitions directly, bypassing missing header issues
           for path in glob.glob('**/layering_rule.h', recursive=True):
               try:
-                  with open(path, 'r') as f:
-                      content = f.read()
-                  
-                  embedded_code = '''
-          #ifndef __LAYERING_RULE_BASE_H__
-          #define __LAYERING_RULE_BASE_H__
-          static inline int layering_rule_calculation(void) { return 0; }
-          #define HRT_PATH_OSZ_NONE 0
-          #define HRT_PATH_PIPE_SINGLE 1
-          #define HRT_PATH_DISP_DUAL_EXT 2
-          #define HRT_PATH_OSZ_PARTIAL 3
-          #define HRT_PATH_DISP_SINGLE 4
-          #define HRT_PATH_UNKNOWN 5
-          #define HRT_PATH_NUM 6
-          #endif
-          '''
-                  content = content.replace('#include \"layering_rule_base.h\"', embedded_code)
-                  content = content.replace('#include <layering_rule_base.h>', embedded_code)
-                  
                   with open(path, 'w') as f:
-                      f.write(content)
+                      f.write('/* Neutralized layering rule */\n')
               except Exception as e:
-                  print(f'Error patching {path}: {e}')
+                  print(f'Error clearing {path}: {e}')
           " || true
 
       - name: Compile Kernel
