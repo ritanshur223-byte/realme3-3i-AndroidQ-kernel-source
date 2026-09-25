@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Level Typos)
+name: Build Realme 3i Custom Kernel (Fix OPP Level Enums)
 
 on:
   workflow_dispatch:
@@ -35,12 +35,13 @@ jobs:
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Overwriting layering rule headers with all MTK typo variants..."
+          echo "Overwriting layering rule headers with all MTK enum and OPP variants..."
           mkdir -p /tmp/master_layering
           cat << 'EOF' > /tmp/master_layering/layering_rule.h
           #ifndef __LAYERING_RULE_H__
           #define __LAYERING_RULE_H__
 
+          /* Base Path Enums & Macros */
           #define HRT_PATH_OSZ_NONE 0
           #define HRT_PATH_PIPE_SINGLE 1
           #define HRT_PATH_DISP_DUAL_EXT 2
@@ -49,6 +50,7 @@ jobs:
           #define HRT_PATH_UNKNOWN 5
           #define HRT_PATH_NUM 6
 
+          /* HRT Level Definitions */
           #define HRT_LEVEL_0 0
           #define HRT_LEVEL_1 1
           #define HRT_LEVEL_2 2
@@ -56,13 +58,27 @@ jobs:
           #define HRT_LEVEL_DEFAULT 4
           #define HRT_LEVEL_NUM 5
 
-          /* Fix for MTK double-level typos */
           #define HRT_LEVEL_LEVEL0 0
           #define HRT_LEVEL_LEVEL1 1
           #define HRT_LEVEL_LEVEL2 2
           #define HRT_LEVEL_LEVEL3 3
           #define HRT_LEVEL_LEVEL_DEFAULT 4
           #define HRT_LEVEL_LEVEL_NUM 5
+
+          /* HRT OPP Enum Required for disp_lowpower.c */
+          enum HRT_OPP_LEVEL {
+              HRT_OPP_LEVEL_LEVEL0 = 0,
+              HRT_OPP_LEVEL_LEVEL1,
+              HRT_OPP_LEVEL_LEVEL2,
+              HRT_OPP_LEVEL_LEVEL3,
+              HRT_OPP_LEVEL_DEFAULT,
+              HRT_OPP_LEVEL_NUM
+          };
+
+          #define HRT_OPP_LEVEL_0 0
+          #define HRT_OPP_LEVEL_1 1
+          #define HRT_OPP_LEVEL_2 2
+          #define HRT_OPP_LEVEL_3 3
 
           #define MAKE_UNIFIED_HRT_PATH_FMT(...) (0)
           #define layering_rule_calculation(...) (0)
