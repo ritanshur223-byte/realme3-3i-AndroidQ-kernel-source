@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Debug-Ready Final Fix)
+name: Build Realme 3i Custom Kernel (Verified Final Code)
 
 on:
   workflow_dispatch:
@@ -28,23 +28,16 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Clean Up and Setup Correct Stubs & Headers
+      - name: Clean Buggy Drivers & Correctly Overwrite All layering_rule.h Files
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Cleaning old layering rule directories..."
-          find . -name "*layering_rule*.h" -delete || true
-          rm -rf drivers/misc/mediatek/video/common/layering_rule_base
-          rm -rf drivers/misc/mediatek/video/common/color20
-
-          mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
-          mkdir -p drivers/misc/mediatek/video/common/color20
-
-          # Clean master header
-          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h
+          echo "Creating a bulletproof master layering_rule.h..."
+          mkdir -p /tmp/master_layering
+          cat << 'EOF' > /tmp/master_layering/layering_rule.h
           #ifndef __LAYERING_RULE_H__
           #define __LAYERING_RULE_H__
 
@@ -69,7 +62,19 @@ jobs:
           #endif
           EOF
 
-          # Valid stub C file and Makefile to fix syntax errors
+          echo "Overwriting every single layering_rule.h in the source tree with correct newlines..."
+          if [ -n "$(find . -name "layering_rule.h")" ]; then
+            for f in $(find . -name "layering_rule.h"); do
+              echo "Overwriting: $f"
+              cp /tmp/master_layering/layering_rule.h "$f"
+            done
+          else
+            mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
+            cp /tmp/master_layering/layering_rule.h drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h
+          fi
+
+          # Setup stubs for safety
+          mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
           #include <linux/module.h>
           #include <linux/kernel.h>
@@ -80,7 +85,7 @@ jobs:
           obj-y := layering_stub.o
           EOF
 
-          # Color20 Stub
+          mkdir -p drivers/misc/mediatek/video/common/color20
           cat << 'EOF' > drivers/misc/mediatek/video/common/color20/color_stub.c
           #include <linux/module.h>
           #include <linux/kernel.h>
@@ -203,13 +208,10 @@ jobs:
           make O=out $DEFCONFIG
           
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
-          LAYERING_HEADER="$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          LAYERING_INC="-I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base"
-          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo ${LAYERING_INC} -include ${STUB_HEADER} -include ${LAYERING_HEADER}"
+          EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${STUB_HEADER}"
           
-          # Run make and if it fails, show the last 150 lines of build.log automatically
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log; then
             echo "=============================================="
             echo "BUILD FAILED! Printing last 150 lines of log:"
