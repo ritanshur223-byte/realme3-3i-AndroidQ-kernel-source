@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fix Enum Conflict)
+name: Build Realme 3i Custom Kernel (Fix Level Typos)
 
 on:
   workflow_dispatch:
@@ -28,37 +28,41 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Setup Headers and Patch Layering Files
+      - name: Setup Headers and Overwrite Layering Files
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Overwriting layering rule headers with standard guards..."
+          echo "Overwriting layering rule headers with all MTK typo variants..."
           mkdir -p /tmp/master_layering
           cat << 'EOF' > /tmp/master_layering/layering_rule.h
           #ifndef __LAYERING_RULE_H__
           #define __LAYERING_RULE_H__
 
-          enum {
-              HRT_PATH_OSZ_NONE = 0,
-              HRT_PATH_PIPE_SINGLE,
-              HRT_PATH_DISP_DUAL_EXT,
-              HRT_PATH_OSZ_PARTIAL,
-              HRT_PATH_DISP_SINGLE,
-              HRT_PATH_UNKNOWN,
-              HRT_PATH_NUM
-          };
+          #define HRT_PATH_OSZ_NONE 0
+          #define HRT_PATH_PIPE_SINGLE 1
+          #define HRT_PATH_DISP_DUAL_EXT 2
+          #define HRT_PATH_OSZ_PARTIAL 3
+          #define HRT_PATH_DISP_SINGLE 4
+          #define HRT_PATH_UNKNOWN 5
+          #define HRT_PATH_NUM 6
 
-          enum {
-              HRT_LEVEL_0 = 0,
-              HRT_LEVEL_1,
-              HRT_LEVEL_2,
-              HRT_LEVEL_3,
-              HRT_LEVEL_DEFAULT,
-              HRT_LEVEL_NUM
-          };
+          #define HRT_LEVEL_0 0
+          #define HRT_LEVEL_1 1
+          #define HRT_LEVEL_2 2
+          #define HRT_LEVEL_3 3
+          #define HRT_LEVEL_DEFAULT 4
+          #define HRT_LEVEL_NUM 5
+
+          /* Fix for MTK double-level typos */
+          #define HRT_LEVEL_LEVEL0 0
+          #define HRT_LEVEL_LEVEL1 1
+          #define HRT_LEVEL_LEVEL2 2
+          #define HRT_LEVEL_LEVEL3 3
+          #define HRT_LEVEL_LEVEL_DEFAULT 4
+          #define HRT_LEVEL_LEVEL_NUM 5
 
           #define MAKE_UNIFIED_HRT_PATH_FMT(...) (0)
           #define layering_rule_calculation(...) (0)
@@ -66,7 +70,7 @@ jobs:
           #endif
           EOF
 
-          # Apply fixed header to all layering header files
+          # Overwrite all occurrences of layering headers in the tree
           find . -name "layering_rule.h" -exec cp /tmp/master_layering/layering_rule.h {} \; || true
           find . -name "layering_rule_base.h" -exec cp /tmp/master_layering/layering_rule.h {} \; || true
 
@@ -207,7 +211,6 @@ jobs:
           PHOENIX_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          # Clean flags without conflicting macro definitions
           EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo -include ${PHOENIX_HEADER}"
           
           if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log; then
