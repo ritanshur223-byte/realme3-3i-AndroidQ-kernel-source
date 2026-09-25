@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Fixed Layering Rule Include)
+name: Build Realme 3i Custom Kernel (Clean Layering Rule Fix)
 
 on:
   workflow_dispatch:
@@ -35,14 +35,14 @@ jobs:
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Setting up proper layering_rule_base header and stubs..."
+          echo "Setting up clean layering_rule_base header and stubs..."
           rm -rf drivers/misc/mediatek/video/common/layering_rule_base
           rm -rf drivers/misc/mediatek/video/common/color20
 
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/common/color20
 
-          # Complete layering_rule_base.h with all required macros and levels
+          # Clean layering_rule_base.h with direct macro values avoiding any conflicts
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule_base.h
           #ifndef __LAYERING_RULE_BASE_H__
           #define __LAYERING_RULE_BASE_H__
@@ -78,7 +78,7 @@ jobs:
           EOF
 
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
-          obj-y := layering_rule_base.o layering_stub.o
+          obj-y := layering_stub.o
           EOF
 
           # Color20 Stub
@@ -206,7 +206,6 @@ jobs:
           STUB_HEADER="$(pwd)/include/linux/oppo_phoenix.h"
           MAKE_OPTS="O=out HOSTCC=gcc HOSTCXX=g++ HOSTCFLAGS=-fcommon HOSTCXXFLAGS=-fcommon CC=aarch64-linux-android-gcc"
           
-          # Adding layering_rule_base include path so any file can find layering_rule_base.h instantly
           LAYERING_INC="-I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base"
           EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo ${LAYERING_INC} -include ${STUB_HEADER}"
           
