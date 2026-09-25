@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Macro-Only Fix)
+name: Build Realme 3i Custom Kernel (Debug-Ready Final Fix)
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Clean Up and Create Macro-Only Master Header
+      - name: Clean Up and Setup Correct Stubs & Headers
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
@@ -43,7 +43,7 @@ jobs:
           mkdir -p drivers/misc/mediatek/video/common/layering_rule_base
           mkdir -p drivers/misc/mediatek/video/common/color20
 
-          # Ultimate clean header using macros only to prevent any redefinition conflicts
+          # Clean master header
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_rule.h
           #ifndef __LAYERING_RULE_H__
           #define __LAYERING_RULE_H__
@@ -69,9 +69,15 @@ jobs:
           #endif
           EOF
 
-          # Empty Makefile for layering_rule_base so it compiles nothing and causes zero errors
+          # Valid stub C file and Makefile to fix syntax errors
+          cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/layering_stub.c
+          #include <linux/module.h>
+          #include <linux/kernel.h>
+          int layering_stub_dummy(void) { return 0; }
+          EOF
+
           cat << 'EOF' > drivers/misc/mediatek/video/common/layering_rule_base/Makefile
-          obj- := layering_rule_base.o
+          obj-y := layering_stub.o
           EOF
 
           # Color20 Stub
@@ -142,7 +148,7 @@ jobs:
           #define KERNEL_DRIVER_INIT_DONE 3
           #define KERNEL_DO_INITCALLS_DONE 4
           #define KERNEL_INIT_DONE 5
-          #define KNET_DO_BASIC_SETUP_DONE 6
+          #define KERNEL_DO_BASIC_SETUP_DONE 6
           #define ERROR_KERNEL_PANIC 0
           #define ERROR_INT 0
           #define ERROR_AEE 0
@@ -203,7 +209,14 @@ jobs:
           LAYERING_INC="-I$(pwd)/drivers/misc/mediatek/video/common/layering_rule_base"
           EXTRA_FLAGS="-Wno-error -fcommon -fpermissive -w -I$(pwd)/include -I$(pwd)/include/oppo ${LAYERING_INC} -include ${STUB_HEADER} -include ${LAYERING_HEADER}"
           
-          make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log
+          # Run make and if it fails, show the last 150 lines of build.log automatically
+          if ! make -j$(nproc --all) $MAKE_OPTS KCFLAGS="$EXTRA_FLAGS" 2>&1 | tee build.log; then
+            echo "=============================================="
+            echo "BUILD FAILED! Printing last 150 lines of log:"
+            echo "=============================================="
+            tail -n 150 build.log
+            exit 1
+          fi
 
       - name: Collect Artifacts
         run: |
@@ -228,7 +241,7 @@ jobs:
 
       - name: Upload Error Log
         if: always()
-        uses: Actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: Kernel-Build-Log
           path: build.log
