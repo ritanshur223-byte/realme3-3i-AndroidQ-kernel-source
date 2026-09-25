@@ -1,4 +1,4 @@
-name: Build Realme 3i Custom Kernel (Complete Fix)
+name: Build Realme 3i Custom Kernel (Fix Layering Base)
 
 on:
   workflow_dispatch:
@@ -28,21 +28,22 @@ jobs:
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64 || true
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32 || true
 
-      - name: Setup Headers and Patch Layering Driver
+      - name: Setup Headers and Patch Layering Drivers
         run: |
           echo "Removing problematic fingerprint drivers..."
           rm -rf drivers/input/oppo_fp_drivers || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Makefile || true
           sed -i '/oppo_fp_drivers/d' drivers/input/Kconfig || true
 
-          echo "Replacing broken layering_rule.c with clean stub..."
-          find drivers/misc/mediatek/video/ -name "layering_rule.c" | while read -r file; do
+          echo "Replacing broken layering_rule.c and layering_rule_base files with clean stubs..."
+          find drivers/misc/mediatek/video/ -name "layering_rule*.c" | while read -r file; do
             cat << 'EOF' > "$file"
           #include <linux/module.h>
           #include <linux/kernel.h>
 
           int layering_rule_init(void) { return 0; }
           void layering_rule_exit(void) {}
+          int layering_rule_start(void) { return 0; }
           EOF
           done
 
